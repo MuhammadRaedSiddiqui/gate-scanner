@@ -32,6 +32,7 @@ input{font:inherit;padding:12px;border-radius:10px;border:1px solid #cbd5e1;back
 #panel{position:fixed;inset:0;background:#f4f6f8;overflow:auto;padding:16px;z-index:5;display:grid;gap:12px;align-content:start}
 #panel label{display:grid;gap:6px;font-size:14px;color:#475569}
 #panel h2,#panel h3{margin:0}
+#loadInfo{white-space:pre-line;font-size:14px;color:#475569}
 #viewer{position:fixed;inset:0;background:#f4f6f8;z-index:8;display:flex;flex-direction:column;gap:10px;padding:calc(16px + env(safe-area-inset-top)) 16px 16px}
 .vh{display:flex;justify-content:space-between;align-items:center}
 #vl{flex:1;overflow:auto;background:#fff;border:1px solid #cbd5e1;border-radius:10px;padding:10px;font:16px/1.7 ui-monospace,monospace;white-space:pre}
@@ -68,8 +69,8 @@ input{font:inherit;padding:12px;border-radius:10px;border:1px solid #cbd5e1;back
   <label>Gate name (saved in the log)<input id="gate" placeholder="e.g. Gate A"></label>
   <label>Roll range for this phone (optional, leave empty for all)
     <div class="row"><input id="from" inputmode="numeric" maxlength="8" placeholder="from"><input id="to" inputmode="numeric" maxlength="8" placeholder="to"></div></label>
-  <button class="pri" id="btnLoad">Load roll list (CSV)</button>
-  <input type="file" id="file" accept=".csv,text/csv,text/plain" hidden>
+  <div class="row"><button class="pri" id="btnLoad">Load CSV files</button><button id="btnAdd">Add more files</button></div>
+  <input type="file" id="file" accept=".csv,text/csv,text/plain" multiple hidden>
   <div id="loadInfo"></div>
   <button id="btnView" hidden>View list</button>
   <div class="row"><button id="btnClrLog">Reset entries</button><button id="btnWipe">Wipe all data</button></div>
@@ -88,7 +89,7 @@ const $=id=>document.getElementById(id);
 const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},
   set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){toast('Storage full or blocked!')}}};
 let list=new Set(store.get('gate.list',[])), log=store.get('gate.log',[]),
-    cfg=store.get('gate.cfg',{gate:'',from:'',to:''}), admitted=new Set(), skipped=0, busy=false, hideT=null, lastRoll='', lastSeen=0, stream=null, actx=null, toastT=null;
+    cfg=store.get('gate.cfg',{gate:'',from:'',to:''}), admitted=new Set(), skipped=0, dupes=0, srcs=store.get('gate.src',[]), busy=false, hideT=null, lastRoll='', lastSeen=0, stream=null, actx=null, toastT=null;
 
 const norm=r=>{const d=String(r).replace(/\D/g,'');return(!d||d.length>8)?null:d.padStart(8,'0')};
 const loc=iso=>{const d=new Date(iso),p=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())};
@@ -160,17 +161,23 @@ function manual(){const r=norm($('man').value);if(!r)return toast('Enter 1 to 8 
 $('btnMan').onclick=manual;$('man').onkeydown=e=>{if(e.key==='Enter')manual()};
 
 /* ---------- CSV load ---------- */
-$('btnLoad').onclick=()=>$('file').click();
+let loadMode='replace';
+$('btnLoad').onclick=()=>{loadMode='replace';$('file').click()};
+$('btnAdd').onclick=()=>{loadMode='add';$('file').click()};
 $('file').onchange=async ev=>{
-  const f=ev.target.files[0];if(!f)return;
-  const rows=(await f.text()).replace(/^\uFEFF/,'').split(/\r?\n/),out=new Set();let bad=0;
-  rows.forEach((ln,i)=>{const c=ln.split(',')[0].replace(/["'\s]/g,'');if(!c)return;if(i===0&&/[a-z]/i.test(c))return;
-    if(/^\d{1,8}$/.test(c))out.add(c.padStart(8,'0'));else bad++});
+  const files=[...ev.target.files];if(!files.length)return;
+  const add=loadMode==='add',merged=new Set(add?list:[]),src=add?srcs.slice():[];let bad=0,dup=0,total=0;
+  for(const f of files){
+    const rows=(await f.text()).replace(/^\uFEFF/,'').split(/\r?\n/);let n=0;
+    rows.forEach((ln,i)=>{const c=ln.split(',')[0].replace(/["'\s]/g,'');if(!c)return;if(i===0&&/[a-z]/i.test(c))return;
+      if(/^\d{1,8}$/.test(c)){const r=c.padStart(8,'0');if(merged.has(r))dup++;else merged.add(r);n++}else bad++});
+    src.push({name:f.name,n});total+=n;
+  }
   ev.target.value='';
-  if(!out.size)return toast('No valid roll numbers found in that file');
-  if(list.size&&!confirm('Replace current list ('+list.size+') with new list ('+out.size+')?'))return;
-  list=out;store.set('gate.list',[...list]);
-  skipped=bad;upd();toast(list.size+' rolls loaded');
+  if(!total)return toast('No valid roll numbers found in the selected file(s)');
+  if(!add&&list.size&&!confirm('Replace current list ('+list.size+') with '+merged.size+' rolls from '+files.length+' file(s)?'))return;
+  list=merged;srcs=src;skipped=bad;dupes=dup;store.set('gate.list',[...list]);store.set('gate.src',srcs);
+  upd();toast(list.size+' rolls loaded');
 };
 
 /* ---------- settings panel ---------- */
@@ -178,7 +185,7 @@ function openPanel(){$('gate').value=cfg.gate;$('from').value=cfg.from;$('to').v
 $('btnSet').onclick=openPanel;
 $('btnClose').onclick=()=>{cfg={gate:$('gate').value.trim(),from:$('from').value.trim(),to:$('to').value.trim()};store.set('gate.cfg',cfg);$('panel').hidden=true;upd()};
 $('btnClrLog').onclick=()=>{if(confirm('Reset all entries? Everyone will count as not yet entered.')){log=[];store.set('gate.log',log);rebuild();upd();$('panel').hidden=true}};
-$('btnWipe').onclick=()=>{if(confirm('Wipe roll list and entries from this phone?')){['gate.list','gate.log'].forEach(k=>localStorage.removeItem(k));list=new Set();log=[];rebuild();upd();$('panel').hidden=true}};
+$('btnWipe').onclick=()=>{if(confirm('Wipe roll list and entries from this phone?')){['gate.list','gate.log','gate.src'].forEach(k=>localStorage.removeItem(k));list=new Set();log=[];srcs=[];rebuild();upd();$('panel').hidden=true}};
 
 /* ---------- list viewer ---------- */
 function renderView(){const q=$('vq').value.replace(/\D/g,''),a=[...list].sort(),r=q?a.filter(x=>x.includes(q)):a;
@@ -188,7 +195,7 @@ $('vx').onclick=()=>$('viewer').hidden=true;$('vq').oninput=renderView;
 
 /* ---------- status bar ---------- */
 function upd(){
-  $('loadInfo').textContent=list.size?list.size+' rolls loaded'+(skipped?' ('+skipped+' rows skipped)':''):'No list loaded';$('btnView').hidden=!list.size;
+  $('loadInfo').textContent=list.size?list.size+' rolls loaded'+(srcs.length?'\n'+srcs.map(x=>x.name+': '+x.n+' rows').join('\n'):'')+((skipped||dupes)?'\n'+(skipped?skipped+' rows skipped. ':'')+(dupes?dupes+' duplicates merged.':''):''):'No list loaded';$('btnView').hidden=!list.size;
   $('sAdm').textContent=admitted.size;$('sList').textContent=list.size;$('gateTag').textContent=cfg.gate?' \u00b7 '+cfg.gate:'';
   const b=$('banner');let m='';
   if(!list.size)m='No roll list loaded. Open Settings and load the CSV.';
