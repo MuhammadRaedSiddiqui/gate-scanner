@@ -32,6 +32,9 @@ input{font:inherit;padding:12px;border-radius:10px;border:1px solid #cbd5e1;back
 #panel{position:fixed;inset:0;background:#f4f6f8;overflow:auto;padding:16px;z-index:5;display:grid;gap:12px;align-content:start}
 #panel label{display:grid;gap:6px;font-size:14px;color:#475569}
 #panel h2,#panel h3{margin:0}
+#viewer{position:fixed;inset:0;background:#f4f6f8;z-index:8;display:flex;flex-direction:column;gap:10px;padding:calc(16px + env(safe-area-inset-top)) 16px 16px}
+.vh{display:flex;justify-content:space-between;align-items:center}
+#vl{flex:1;overflow:auto;background:#fff;border:1px solid #cbd5e1;border-radius:10px;padding:10px;font:16px/1.7 ui-monospace,monospace;white-space:pre}
 #toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);background:#111827e6;color:#fff;padding:10px 16px;border-radius:20px;z-index:9;max-width:90%;text-align:center}
 </style>
 </head>
@@ -68,8 +71,14 @@ input{font:inherit;padding:12px;border-radius:10px;border:1px solid #cbd5e1;back
   <button class="pri" id="btnLoad">Load roll list (CSV)</button>
   <input type="file" id="file" accept=".csv,text/csv,text/plain" hidden>
   <div id="loadInfo"></div>
+  <button id="btnView" hidden>View list</button>
   <div class="row"><button id="btnClrLog">Reset entries</button><button id="btnWipe">Wipe all data</button></div>
   <button class="pri" id="btnClose">Close</button>
+</div>
+<div id="viewer" hidden>
+  <div class="vh"><b id="vc"></b><button id="vx">Close</button></div>
+  <input id="vq" inputmode="numeric" placeholder="Search roll number" autocomplete="off">
+  <div id="vl"></div>
 </div>
 <div id="toast" hidden></div>
 
@@ -79,7 +88,7 @@ const $=id=>document.getElementById(id);
 const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},
   set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){toast('Storage full or blocked!')}}};
 let list=new Set(store.get('gate.list',[])), log=store.get('gate.log',[]),
-    cfg=store.get('gate.cfg',{gate:'',from:'',to:''}), admitted=new Set(), busy=false, hideT=null, lastRoll='', lastSeen=0, stream=null, actx=null, toastT=null;
+    cfg=store.get('gate.cfg',{gate:'',from:'',to:''}), admitted=new Set(), skipped=0, busy=false, hideT=null, lastRoll='', lastSeen=0, stream=null, actx=null, toastT=null;
 
 const norm=r=>{const d=String(r).replace(/\D/g,'');return(!d||d.length>8)?null:d.padStart(8,'0')};
 const loc=iso=>{const d=new Date(iso),p=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())};
@@ -161,8 +170,7 @@ $('file').onchange=async ev=>{
   if(!out.size)return toast('No valid roll numbers found in that file');
   if(list.size&&!confirm('Replace current list ('+list.size+') with new list ('+out.size+')?'))return;
   list=out;store.set('gate.list',[...list]);
-  const a=[...list];$('loadInfo').textContent=list.size+' rolls loaded ('+bad+' rows skipped). First '+a[0]+', last '+a[a.length-1]+'. Compare this count with your Sheet.';
-  upd();
+  skipped=bad;upd();toast(list.size+' rolls loaded');
 };
 
 /* ---------- settings panel ---------- */
@@ -172,8 +180,15 @@ $('btnClose').onclick=()=>{cfg={gate:$('gate').value.trim(),from:$('from').value
 $('btnClrLog').onclick=()=>{if(confirm('Reset all entries? Everyone will count as not yet entered.')){log=[];store.set('gate.log',log);rebuild();upd();$('panel').hidden=true}};
 $('btnWipe').onclick=()=>{if(confirm('Wipe roll list and entries from this phone?')){['gate.list','gate.log'].forEach(k=>localStorage.removeItem(k));list=new Set();log=[];rebuild();upd();$('panel').hidden=true}};
 
+/* ---------- list viewer ---------- */
+function renderView(){const q=$('vq').value.replace(/\D/g,''),a=[...list].sort(),r=q?a.filter(x=>x.includes(q)):a;
+  $('vc').textContent=q?r.length+' of '+a.length+' shown':a.length+' rolls';$('vl').textContent=r.join('\n')||'No match'}
+$('btnView').onclick=()=>{$('vq').value='';renderView();$('viewer').hidden=false};
+$('vx').onclick=()=>$('viewer').hidden=true;$('vq').oninput=renderView;
+
 /* ---------- status bar ---------- */
 function upd(){
+  $('loadInfo').textContent=list.size?list.size+' rolls loaded'+(skipped?' ('+skipped+' rows skipped)':''):'No list loaded';$('btnView').hidden=!list.size;
   $('sAdm').textContent=admitted.size;$('sList').textContent=list.size;$('gateTag').textContent=cfg.gate?' \u00b7 '+cfg.gate:'';
   const b=$('banner');let m='';
   if(!list.size)m='No roll list loaded. Open Settings and load the CSV.';
