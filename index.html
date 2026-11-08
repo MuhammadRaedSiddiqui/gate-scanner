@@ -19,6 +19,8 @@ button.pri{background:#15803d;color:#fff}
 #banner{background:#fef3c7;color:#92400e;padding:8px 12px;font-size:14px}
 main{flex:1;position:relative;overflow:hidden;background:#000}
 video{width:100%;height:100%;object-fit:cover}
+#btnTorch{position:absolute;top:10px;right:10px;z-index:2;background:#000b;color:#fff;padding:10px 14px}
+#btnTorch.on{background:#facc15;color:#111}
 .frame{position:absolute;inset:20% 15%;border:3px solid #ffffff88;border-radius:16px;pointer-events:none}
 #startBox{position:absolute;inset:0;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;background:#f4f6f8;color:#111827;padding:24px;text-align:center}
 #startBox img{height:110px}
@@ -50,6 +52,7 @@ select{font:inherit;padding:12px;border-radius:10px;border:1px solid #cbd5e1;bac
   <main>
     <video id="v" playsinline muted></video>
     <div class="frame"></div>
+    <button id="btnTorch" hidden>Flash: OFF</button>
     <div id="startBox">
       <img src="logo.png" alt="">
       <button class="pri" id="btnStart" style="font-size:20px;padding:18px 26px">Tap to start scanning</button>
@@ -143,7 +146,7 @@ async function start(){
   try{actx=actx||new(window.AudioContext||window.webkitAudioContext)()}catch(e){}
   try{
     stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
-    vid.srcObject=stream;await vid.play();$('startBox').hidden=true;wake();tick();
+    vid.srcObject=stream;await vid.play();$('startBox').hidden=true;wake();tick();initTorch();setTimeout(()=>{if($('btnTorch').hidden)initTorch()},800);
   }catch(e){$('startMsg').textContent='Camera unavailable ('+(e.name||'error')+'). Allow camera permission, or use manual entry below.'}
 }
 function tick(){
@@ -163,7 +166,13 @@ function tick(){
   setTimeout(tick,80);
 }
 async function wake(){try{if(navigator.wakeLock)await navigator.wakeLock.request('screen')}catch(e){}}
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&stream)wake()});
+let track=null,torchOn=false;
+function initTorch(){if(!stream)return;track=stream.getVideoTracks()[0];const c=track&&track.getCapabilities?track.getCapabilities():{};
+  if(c.torch){$('btnTorch').hidden=false;if(store.get('gate.torch',false)&&!torchOn)setTorch(true)}}
+async function setTorch(on){try{await track.applyConstraints({advanced:[{torch:on}]});torchOn=on;store.set('gate.torch',on);
+  $('btnTorch').textContent='Flash: '+(on?'ON':'OFF');$('btnTorch').classList.toggle('on',on)}catch(e){toast('Flash not available on this phone')}}
+$('btnTorch').onclick=()=>setTorch(!torchOn);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&stream){wake();if(torchOn&&track)setTorch(true)}});
 $('btnStart').onclick=start;
 
 /* ---------- manual entry / undo ---------- */
