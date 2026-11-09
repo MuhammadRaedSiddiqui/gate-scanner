@@ -1,4 +1,4 @@
-const CACHE='gate-v7'; // bump this number whenever you change any app file
+const CACHE='gate-v9'; // bump this number whenever you change any app file
 const FILES=['./','./index.html','./jsQR.js','./manifest.webmanifest','./icon-192.png','./icon-512.png','./logo.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==CACHE).map(x=>caches.delete(x)))).then(()=>self.clients.claim()))});

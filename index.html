@@ -6,6 +6,9 @@
 <meta name="theme-color" content="#ffffff">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Gate">
 <title>Gate Scanner</title>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -19,9 +22,10 @@ button.pri{background:#15803d;color:#fff}
 #banner{background:#fef3c7;color:#92400e;padding:8px 12px;font-size:14px}
 main{flex:1;position:relative;overflow:hidden;background:#000}
 video{width:100%;height:100%;object-fit:cover}
-#btnTorch{position:absolute;top:10px;right:10px;z-index:2;background:#000b;color:#fff;padding:10px 14px}
+#btnTorch,#btnZoom{position:absolute;top:10px;z-index:2;background:#000b;color:#fff;padding:10px 14px}
+#btnTorch{right:10px}#btnZoom{right:128px}
 #btnTorch.on{background:#facc15;color:#111}
-.frame{position:absolute;inset:20% 15%;border:3px solid #ffffff88;border-radius:16px;pointer-events:none}
+.frame{position:absolute;inset:12% 8%;border:3px solid #ffffff88;border-radius:16px;pointer-events:none}
 #startBox{position:absolute;inset:0;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;background:#f4f6f8;color:#111827;padding:24px;text-align:center}
 #startBox img{height:110px}
 #ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:20px;color:#fff}
@@ -52,7 +56,7 @@ select{font:inherit;padding:12px;border-radius:10px;border:1px solid #cbd5e1;bac
   <main>
     <video id="v" playsinline muted></video>
     <div class="frame"></div>
-    <button id="btnTorch" hidden>Flash: OFF</button>
+    <button id="btnTorch" hidden>Flash: OFF</button><button id="btnZoom" hidden>Zoom 1.5x</button>
     <div id="startBox">
       <img src="logo.png" alt="">
       <button class="pri" id="btnStart" style="font-size:20px;padding:18px 26px">Tap to start scanning</button>
@@ -70,7 +74,7 @@ select{font:inherit;padding:12px;border-radius:10px;border:1px solid #cbd5e1;bac
 
 <div id="panel" hidden>
   <h2>Settings</h2>
-  <label>Gate name (saved in the log)<input id="gate" placeholder="e.g. Gate A"></label>
+  <label>Gate name (shown in the top bar)<input id="gate" placeholder="e.g. Gate A"></label>
   <label>Roll range for this phone (optional, leave empty for all)
     <div class="row"><input id="from" inputmode="numeric" maxlength="8" placeholder="from"><input id="to" inputmode="numeric" maxlength="8" placeholder="to"></div></label>
   <div class="row"><button class="pri" id="btnLoad">Load CSV files</button><button id="btnAdd">Add more files</button></div>
@@ -94,33 +98,36 @@ const $=id=>document.getElementById(id);
 const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},
   set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){toast('Storage full or blocked!')}}};
 function loadDb(){const v=store.get('gate.list',{});if(Array.isArray(v)){const o={};v.forEach(r=>o[r]=[['','',1]]);return o}return v}
-let db=loadDb(), log=store.get('gate.log',[]),
-    cfg=store.get('gate.cfg',{gate:'',from:'',to:''}), admitted=new Set(), skipped=0, dupes=0, srcs=store.get('gate.src',[]), busy=false, hideT=null, lastRoll='', lastSeen=0, stream=null, actx=null, toastT=null;
+const rm=(...ks)=>ks.forEach(k=>{try{localStorage.removeItem(k)}catch(e){}});
+rm('gate.log','gate.exp','gate.torch'); // one-time cleanup of old keys
+function loadAdm(){const v=store.get('gate.adm',{});return(v&&typeof v==='object'&&!Array.isArray(v))?v:{}}
+let db=loadDb(),
+    cfg=store.get('gate.cfg',{gate:'',from:'',to:''}), admitted=loadAdm(), skipped=0, dupes=0, conflicts=0, srcs=store.get('gate.src',[]), busy=false, hideT=null, lastRoll='', lastSeen=0, stream=null, actx=null, toastT=null;
 
 const norm=r=>{const d=String(r).replace(/\D/g,'');return(!d||d.length>8)?null:d.padStart(8,'0')};
-const loc=iso=>{const d=new Date(iso),p=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())};
+
 const tm=iso=>new Date(iso).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
 const nrolls=()=>Object.keys(db).length, key=r=>r+'|'+(cfg.exam||'');
-function rebuild(){admitted=new Set(log.filter(e=>e.s==='REGISTERED'||e.s==='MANUAL').map(e=>e.r+'|'+(e.x||'')))}
-function toast(m){const t=$('toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2500)}
+
+function toast(m,ms){const t=$('toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,ms||2500)}
 
 /* ---------- decision logic ---------- */
 function inRange(r){const f=norm(cfg.from),t=norm(cfg.to);return !((f&&r<f)||(t&&r>t))}
-function record(r,s){const e={r,t:new Date().toISOString(),s,g:cfg.gate||'',x:cfg.exam||''};log.push(e);store.set('gate.log',log);return e}
+function admit(r){const k=key(r);if(!admitted[k]){admitted[k]=new Date().toISOString();store.set('gate.adm',admitted)}} // first entry time only
 const fmt=v=>v.map(x=>'time: '+(x[1]||'-')+'\nexam: '+(x[0]||'-')).join('\n\n');
 function decide(r){
   if(!nrolls())return show('grey','LOAD LIST FIRST','Open Settings and load the CSV',r);
-  if(!inRange(r)){record(r,'WRONG_GATE');return show('blue','WRONG GATE','This roll belongs to another gate',r,true)}
+  if(!inRange(r)){return show('blue','WRONG GATE','This roll belongs to another gate',r,true)}
   const e=db[r]||[],f=e.filter(v=>!cfg.exam||v[0]===cfg.exam),ok=f.filter(v=>v[2]);
-  if(admitted.has(key(r))){const p=log.find(l=>l.r===r&&(l.x||'')===(cfg.exam||'')&&(l.s==='REGISTERED'||l.s==='MANUAL'));record(r,'DUPLICATE');return show('orange','DUPLICATE','Already entered at '+tm(p.t)+(ok.length?'\n\n'+fmt(ok):''),r)}
-  if(ok.length){record(r,'REGISTERED');admitted.add(key(r));return show('green','REGISTERED',fmt(ok),r)}
-  record(r,'NOT_REGISTERED');
+  if(admitted[key(r)])return show('orange','DUPLICATE','Already entered at '+tm(admitted[key(r)])+(ok.length?'\n\n'+fmt(ok):''),r);
+  if(ok.length){admit(r);return show('green','REGISTERED',fmt(ok),r)}
+
   if(f.length)return show('red','NOT ELIGIBLE','Listed as not eligible: '+f.map(v=>v[0]||'this exam').join(', '),r,true);
   const o=e.filter(v=>v[2]);
   if(o.length)return show('red','WRONG EXAM','Registered for:\n'+fmt(o),r,true);
   show('red','NOT REGISTERED','Send to help desk',r,true)
 }
-function override(){const r=$('oR').textContent;record(r,'MANUAL');admitted.add(key(r));hide();upd();toast('Admitted manually: '+r)}
+function override(){const r=$('oR').textContent;admit(r);hide();upd();toast('Admitted manually: '+r)}
 
 /* ---------- result screen ---------- */
 function show(kind,title,sub,roll,act){
@@ -141,38 +148,105 @@ function beep(kind){
 }
 
 /* ---------- camera + decode ---------- */
-const cv=document.createElement('canvas'),cx=cv.getContext('2d',{willReadFrequently:true}),vid=$('v');
+const cv=document.createElement('canvas'),cx=cv.getContext('2d',{willReadFrequently:true}),cv2=document.createElement('canvas'),cx2=cv2.getContext('2d',{willReadFrequently:true}),vid=$('v'),guide=document.querySelector('.frame');
+let track=null,caps={},torchOn=false,zoomIdx=1,loopId=0,starting=false,detector=null,derr=0,bestStrat=-1,prefer=false,ladderN=0,cyc=0,lastDecode=0,objSince=0,lastHint=0;
+const ZOOMS=[1,1.5,2];
+// 1) native BarcodeDetector when the phone has it (jsQR ladder is the fallback)
+(async()=>{try{if('BarcodeDetector' in window&&(await BarcodeDetector.getSupportedFormats()).includes('qr_code'))detector=new BarcodeDetector({formats:['qr_code']})}catch(e){detector=null}})();
+function stopCam(){loopId++;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;track=null;caps={};torchOn=false;
+  const b=$('btnTorch');b.hidden=true;b.textContent='Flash: OFF';b.classList.remove('on');$('btnZoom').hidden=true;vid.srcObject=null}
+function camLost(){stopCam();$('startMsg').textContent='Camera stopped. Tap to restart.';$('startBox').hidden=false}
 async function start(){
+  if(starting)return;starting=true;
   try{actx=actx||new(window.AudioContext||window.webkitAudioContext)()}catch(e){}
+  stopCam();
   try{
-    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
-    vid.srcObject=stream;await vid.play();$('startBox').hidden=true;wake();tick();initTorch();setTimeout(()=>{if($('btnTorch').hidden)initTorch()},800);
-  }catch(e){$('startMsg').textContent='Camera unavailable ('+(e.name||'error')+'). Allow camera permission, or use manual entry below.'}
+    const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
+    stream=s;track=s.getVideoTracks()[0];vid.srcObject=s;await vid.play();
+    const t=track;t.addEventListener('ended',()=>{if(track===t)camLost()});
+    t.addEventListener('mute',()=>setTimeout(()=>{if(track===t&&(t.muted||t.readyState==='ended'))camLost()},1500));
+    $('startBox').hidden=true;wake();lastDecode=Date.now();objSince=0;startLoop();initCam();setTimeout(()=>{if(track===t&&!caps.torch&&!caps.zoom)initCam()},800);
+  }catch(e){stopCam();$('startMsg').textContent='Camera unavailable ('+(e.name||'error')+'). Allow camera permission, or use manual entry below.'}
+  finally{starting=false}
 }
-function tick(){
-  if(!stream)return;
-  if(vid.readyState>=2&&vid.videoWidth){
-    const sc=Math.min(1,960/Math.max(vid.videoWidth,vid.videoHeight));
-    cv.width=Math.round(vid.videoWidth*sc);cv.height=Math.round(vid.videoHeight*sc);
-    cx.drawImage(vid,0,0,cv.width,cv.height);
-    const im=cx.getImageData(0,0,cv.width,cv.height),c=jsQR(im.data,im.width,im.height,{inversionAttempts:'dontInvert'});
-    if(c&&c.data){
-      const now=Date.now(),r=norm(c.data);
-      if(busy){lastSeen=now}
-      else if(r&&r===lastRoll&&now-lastSeen<1200){lastSeen=now} // same card still in view: ignore until it leaves the frame
-      else{lastSeen=now;lastRoll=r||'';r?decide(r):show('grey','INVALID CODE','Not a roll number: '+String(c.data).slice(0,20),'')}
-    }
-  }
-  setTimeout(tick,80);
+// focus + zoom + torch are applied together as separate "advanced" sets so they never overwrite each other
+async function applyCam(){if(!track)return;const adv=[];
+  if(caps.focusMode&&caps.focusMode.includes('continuous'))adv.push({focusMode:'continuous'});
+  if(caps.zoom)adv.push({zoom:Math.min(caps.zoom.max,Math.max(caps.zoom.min,ZOOMS[zoomIdx]))});
+  if(caps.torch)adv.push({torch:torchOn});
+  if(adv.length)await track.applyConstraints({advanced:adv})}
+async function initCam(){if(!track)return;try{caps=track.getCapabilities?track.getCapabilities():{}}catch(e){caps={}}
+  const z=store.get('gate.zoom',1);zoomIdx=(z>=0&&z<ZOOMS.length)?z:1;
+  $('btnTorch').hidden=!caps.torch;$('btnZoom').hidden=!caps.zoom;$('btnZoom').textContent='Zoom '+ZOOMS[zoomIdx]+'x';
+  try{await applyCam()}catch(e){}}
+async function setTorch(on){const prev=torchOn;torchOn=on;try{await applyCam();$('btnTorch').textContent='Flash: '+(on?'ON':'OFF');$('btnTorch').classList.toggle('on',on)}catch(e){torchOn=prev;toast('Flash not available on this phone')}}
+$('btnTorch').onclick=()=>setTorch(!torchOn);
+$('btnZoom').onclick=async()=>{zoomIdx=(zoomIdx+1)%ZOOMS.length;store.set('gate.zoom',zoomIdx);$('btnZoom').textContent='Zoom '+ZOOMS[zoomIdx]+'x';try{await applyCam()}catch(e){}};
+function startLoop(){const id=++loopId;(async function run(){if(id!==loopId||!stream)return;try{await tick(id)}catch(e){}setTimeout(run,80)})()}
+
+// 2) preprocessing ladder for jsQR
+const gray=d=>{const g=new Uint8ClampedArray(d.length>>2);for(let i=0,j=0;j<g.length;i+=4,j++)g[j]=(d[i]*77+d[i+1]*150+d[i+2]*29)>>8;return g};
+const rgba=g=>{const o=new Uint8ClampedArray(g.length*4);for(let i=0,j=0;i<g.length;i++,j+=4){o[j]=o[j+1]=o[j+2]=g[i];o[j+3]=255}return o};
+const pct=(h,t)=>{let a=0;for(let i=0;i<256;i++){a+=h[i];if(a>=t)return i}return 255};
+function stretch(g){const h=new Uint32Array(256);for(let i=0;i<g.length;i++)h[g[i]]++;
+  const lo=pct(h,g.length*.02),hi=pct(h,g.length*.98),k=255/Math.max(1,hi-lo),o=new Uint8ClampedArray(g.length);
+  for(let i=0;i<g.length;i++)o[i]=(g[i]-lo)*k;return o}
+function boxMean(g,w,h,r){const W=w+1,I=new Float64Array(W*(h+1)),m=new Float32Array(w*h);
+  for(let y=0;y<h;y++){let row=0;for(let x=0;x<w;x++){row+=g[y*w+x];I[(y+1)*W+x+1]=I[y*W+x+1]+row}}
+  for(let y=0;y<h;y++){const y0=Math.max(0,y-r),y1=Math.min(h,y+r+1);for(let x=0;x<w;x++){const x0=Math.max(0,x-r),x1=Math.min(w,x+r+1);
+    m[y*w+x]=(I[y1*W+x1]-I[y0*W+x1]-I[y1*W+x0]+I[y0*W+x0])/((y1-y0)*(x1-x0))}}return m}
+function adapt(g,w,h){const m=boxMean(g,w,h,12),o=new Uint8ClampedArray(g.length);for(let i=0;i<g.length;i++)o[i]=g[i]<m[i]*.93?0:255;return o} // 25x25 mean threshold
+function sharp(g,w,h){const m=boxMean(g,w,h,2),o=new Uint8ClampedArray(g.length);for(let i=0;i<g.length;i++)o[i]=g[i]+1.6*(g[i]-m[i]);return o} // unsharp mask
+// n: 0 raw, 1 contrast stretch, 2 adaptive threshold, 3 sharpen, 4 upscale + stretch
+function prep(n,im,w,h){
+  if(n===0)return[im.data,w,h];
+  if(n===4){const f=Math.min(1.75,1400/Math.max(w,h));
+    if(f>=1.1){cv2.width=Math.round(w*f);cv2.height=Math.round(h*f);cx2.imageSmoothingEnabled=true;cx2.imageSmoothingQuality='high';
+      cx2.drawImage(cv,0,0,cv2.width,cv2.height);return[rgba(stretch(gray(cx2.getImageData(0,0,cv2.width,cv2.height).data))),cv2.width,cv2.height]}n=1}
+  const g=gray(im.data);return[rgba(n===1?stretch(g):n===2?adapt(g,w,h):sharp(g,w,h)),w,h]}
+function ladder(im,w,h){
+  ladderN++;let n;
+  if(ladderN%6===0)n=5;                                        // slower attemptBoth pass, every few ticks
+  else if(prefer&&bestStrat>=0)n=bestStrat;                    // last winner goes first
+  else if(bestStrat>=0&&ladderN%2===0)n=bestStrat;
+  else n=cyc++%5;
+  prefer=false;
+  const base=n===5?(bestStrat>=0?bestStrat:1):n,p=prep(base,im,w,h),c=jsQR(p[0],p[1],p[2],{inversionAttempts:n===5?'attemptBoth':'dontInvert'});
+  if(c&&c.data){bestStrat=base;prefer=true;return String(c.data).trim()}return null}
+
+// 5) glare hint: something with contrast has been in the frame for 4 s but nothing decoded
+function hintCheck(im){const now=Date.now(),d=im.data;let s=0,q=0,n=0;
+  for(let i=1;i<d.length;i+=148){const v=d[i];s+=v;q+=v*v;n++}
+  const sd=Math.sqrt(Math.max(0,q/n-(s/n)*(s/n)));
+  if(sd<35)objSince=0;else if(!objSince)objSince=now;
+  if(!busy&&objSince&&now-objSince>4000&&now-lastDecode>4000&&now-lastHint>15000){lastHint=now;objSince=now;toast('Tilt the card slightly to avoid glare, and keep it 15 to 25 cm away.',4000)}}
+function onCode(q){const now=Date.now();lastDecode=now;objSince=0;
+  if(busy){lastSeen=now}
+  else if(q===lastRoll&&now-lastSeen<1200){lastSeen=now} // same card still in view: ignore until it leaves the frame
+  else{lastSeen=now;lastRoll=q;/^\d{8}$/.test(q)?decide(q):show('grey','INVALID CODE','Not a roll number: '+q.slice(0,20),'')}}
+async function tick(id){
+  if(!$('panel').hidden||!$('viewer').hidden){lastSeen=Date.now();objSince=0;return} // paused while Settings / list viewer is open
+  if(vid.readyState<2||!vid.videoWidth)return;
+  const vw=vid.videoWidth,vh=vid.videoHeight,vr=vid.getBoundingClientRect(),fr=guide.getBoundingClientRect();
+  if(!vr.width||!vr.height)return;
+  // video is object-fit:cover: map the on-screen guide frame into video pixels
+  const k=Math.max(vr.width/vw,vr.height/vh),ox=(vw*k-vr.width)/2,oy=(vh*k-vr.height)/2;
+  const sx=Math.max(0,(fr.left-vr.left+ox)/k),sy=Math.max(0,(fr.top-vr.top+oy)/k);
+  const sw=Math.min(vw-sx,fr.width/k),sh=Math.min(vh-sy,fr.height/k);
+  if(sw<32||sh<32)return;
+  const d=Math.min(1,1100/Math.max(sw,sh)),w=Math.round(sw*d),h=Math.round(sh*d);cv.width=w;cv.height=h;
+  cx.drawImage(vid,sx,sy,sw,sh,0,0,w,h);
+  let q=null;
+  if(detector){try{const r=await detector.detect(cv);derr=0;if(r&&r.length&&r[0].rawValue)q=String(r[0].rawValue).trim()}catch(e){if(++derr>5)detector=null}}
+  if(id!==loopId||!$('panel').hidden||!$('viewer').hidden)return;
+  if(!q){const im=cx.getImageData(0,0,w,h);try{q=ladder(im,w,h)}catch(e){q=null}if(!q)hintCheck(im)}
+  if(q)onCode(q);
 }
 async function wake(){try{if(navigator.wakeLock)await navigator.wakeLock.request('screen')}catch(e){}}
-let track=null,torchOn=false;
-function initTorch(){if(!stream)return;track=stream.getVideoTracks()[0];const c=track&&track.getCapabilities?track.getCapabilities():{};
-  if(c.torch){$('btnTorch').hidden=false;if(store.get('gate.torch',false)&&!torchOn)setTorch(true)}}
-async function setTorch(on){try{await track.applyConstraints({advanced:[{torch:on}]});torchOn=on;store.set('gate.torch',on);
-  $('btnTorch').textContent='Flash: '+(on?'ON':'OFF');$('btnTorch').classList.toggle('on',on)}catch(e){toast('Flash not available on this phone')}}
-$('btnTorch').onclick=()=>setTorch(!torchOn);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&stream){wake();if(torchOn&&track)setTorch(true)}});
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden||!stream)return;wake();
+  if(!track||track.readyState==='ended'){camLost();return}
+  const ct=vid.currentTime;setTimeout(()=>{if(stream&&!document.hidden&&vid.currentTime===ct)camLost()},1000)});
 $('btnStart').onclick=start;
 
 /* ---------- manual entry / undo ---------- */
@@ -200,7 +274,7 @@ function parseSheet(text,fname){
     const ok=tb.e<0||/^(eligible|pass|passed|yes|ok|registered|selected)$/i.test((row[tb.e]||'').trim());
     out.push([c.padStart(8,'0'),exam,tb.t>=0?(row[tb.t]||'').trim():'',ok])}));
   return{rows:out,bad,exam}}
-let conflicts=0,loadMode='replace';
+let loadMode='replace';
 $('btnLoad').onclick=()=>{loadMode='replace';$('file').click()};
 $('btnAdd').onclick=()=>{loadMode='add';$('file').click()};
 $('file').onchange=async ev=>{
@@ -225,8 +299,8 @@ function openPanel(){$('gate').value=cfg.gate;$('from').value=cfg.from;$('to').v
   sel.innerHTML='';sel.add(new Option('All exams',''));ex.forEach(x=>sel.add(new Option(x,x)));sel.value=cfg.exam||'';$('panel').hidden=false}
 $('btnSet').onclick=openPanel;
 $('btnClose').onclick=()=>{cfg={gate:$('gate').value.trim(),from:$('from').value.trim(),to:$('to').value.trim(),exam:$('exam').value};store.set('gate.cfg',cfg);$('panel').hidden=true;upd()};
-$('btnClrLog').onclick=()=>{if(confirm('Reset all entries? Everyone will count as not yet entered.')){log=[];store.set('gate.log',log);rebuild();upd();$('panel').hidden=true}};
-$('btnWipe').onclick=()=>{if(confirm('Wipe roll list and entries from this phone?')){['gate.list','gate.log','gate.src'].forEach(k=>localStorage.removeItem(k));db={};log=[];srcs=[];rebuild();upd();$('panel').hidden=true}};
+$('btnClrLog').onclick=()=>{if(confirm('Reset all entries? Everyone will count as not yet entered.')){admitted={};rm('gate.adm');upd();$('panel').hidden=true}};
+$('btnWipe').onclick=()=>{if(confirm('Wipe roll list and entries from this phone?')){rm('gate.list','gate.adm','gate.src');db={};admitted={};srcs=[];skipped=0;dupes=0;conflicts=0;upd();$('panel').hidden=true}};
 
 /* ---------- list viewer ---------- */
 function renderView(){const q=$('vq').value.replace(/\D/g,''),a=Object.keys(db).sort(),r=q?a.filter(x=>x.includes(q)):a;
@@ -238,12 +312,12 @@ $('vx').onclick=()=>$('viewer').hidden=true;$('vq').oninput=renderView;
 /* ---------- status bar ---------- */
 function upd(){
   $('loadInfo').textContent=nrolls()?nrolls()+' rolls loaded'+(srcs.length?'\n'+srcs.map(x=>x.name+(x.ex?' ('+x.ex+')':'')+': '+x.n+' eligible'+(x.x?', '+x.x+' not eligible':'')).join('\n'):'')+((skipped||dupes||conflicts)?'\n'+(skipped?skipped+' rows skipped. ':'')+(dupes?dupes+' repeats merged. ':'')+(conflicts?conflicts+' repeats with different time slots (first kept).':''):''):'No list loaded';$('btnView').hidden=!nrolls();
-  $('sAdm').textContent=[...admitted].filter(k=>k.endsWith('|'+(cfg.exam||''))).length;$('sList').textContent=nrolls();$('gateTag').textContent=(cfg.gate?' \u00b7 '+cfg.gate:'')+(cfg.exam?' \u00b7 '+cfg.exam:'');
+  $('sAdm').textContent=Object.keys(admitted).filter(k=>k.endsWith('|'+(cfg.exam||''))).length;$('sList').textContent=nrolls();$('gateTag').textContent=(cfg.gate?' \u00b7 '+cfg.gate:'')+(cfg.exam?' \u00b7 '+cfg.exam:'');
   const b=$('banner');let m='';
   if(!nrolls())m='No roll list loaded. Open Settings and load the CSV.';
   b.textContent=m;b.hidden=!m;
 }
-rebuild();upd();
+upd();
 if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
