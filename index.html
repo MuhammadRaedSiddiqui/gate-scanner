@@ -103,7 +103,6 @@ select{font:inherit;padding:12px;border-radius:10px;border:1px solid #cbd5e1;bac
 <div id="queue" hidden>
   <div class="vh"><b id="qc">Queue</b><button id="qx">Close</button></div>
   <div class="tabs" id="qt"></div>
-  <div class="tabs" id="qs"></div>
   <div id="qcnt"></div>
   <div class="row" id="qb" hidden><input id="qbs" inputmode="numeric" maxlength="3" aria-label="Batch size"><button id="qmb">Mark batch sent</button></div>
   <input id="qq" inputmode="numeric" placeholder="Search roll number" autocomplete="off">
@@ -141,7 +140,7 @@ const fmtQ=(ok,q)=>ok.map((v,i)=>(q.length>1&&q[i]?'No. '+q[i].n+'\n':'')+'time:
 const nameOf=e=>(e.find(v=>v[3])||[])[3]||'';
 function enqueue(r,ents){const out=[];let ch=false;
   ents.forEach(v=>{const k=r+'|'+v[0],s=v[1]||'';
-    if(!queue[k]){let n=1;for(const z of Object.values(queue))if(z.x===v[0]&&z.s===s&&z.n>=n)n=z.n+1;queue[k]={r,x:v[0],s,n,nm:v[3]||'',d:''};ch=true}
+    if(!queue[k]){let n=1;for(const z of Object.values(queue))if(z.x===v[0]&&z.n>=n)n=z.n+1;queue[k]={r,x:v[0],s,n,nm:v[3]||'',d:''};ch=true}
     out.push(queue[k])});
   if(ch)store.set('gate.q',queue);return out}
 function decide(r){
@@ -157,15 +156,12 @@ function decide(r){
 }
 // "Admit anyway": admit, then queue. Exam+slot known -> queued directly, otherwise the picker asks which queue.
 function override(){const p=pending;if(!p)return hide();admit(p.r);clearTimeout(hideT);$('ov').hidden=true;upd();
-  const known=p.pool.filter(v=>v[1]),unk=p.pool.filter(v=>!v[1]);
-  if(known.length){const q=enqueue(p.r,known);toast('Admitted. '+q.map(z=>sh(z.x)+' '+z.s+' No. '+z.n).join(', '))}else toast('Admitted manually: '+p.r);
-  if(unk.length||!p.pool.length)openPick(p.r,unk[0]?unk[0][0]:'',nameOf(p.pool));else busy=false}
-function queuesFor(x){const m={},add=(a,b)=>{if(!x||a===x)m[a+'\u0001'+b]={x:a,s:b}};
-  Object.values(db).forEach(a=>a.forEach(v=>v[1]&&add(v[0],v[1])));Object.values(queue).forEach(z=>z.s&&add(z.x,z.s));
-  const l=Object.values(m).sort((a,b)=>a.x<b.x?-1:a.x>b.x?1:slotVal(a.s)-slotVal(b.s));return l.length?l:(x?[{x,s:''}]:[])}
-function openPick(r,x,nm){busy=true;$('pT').textContent='Assign '+r+(nm?' ('+nm+')':'')+' to which queue?';const b=$('pB');b.innerHTML='';
-  queuesFor(x).forEach(c=>{const t=document.createElement('button');t.textContent=sh(c.x)+' '+(c.s||'No slot');
-    t.onclick=()=>{const q=enqueue(r,[[c.x,c.s,1,nm]]);closePick();toast('Queued: '+t.textContent+', No. '+q[0].n)};b.appendChild(t)});
+  if(p.pool.length){const q=enqueue(p.r,p.pool);toast('Admitted. '+q.map(z=>sh(z.x)+' No. '+z.n).join(', '));busy=false}
+  else{toast('Admitted manually: '+p.r);openPick(p.r)}}
+function qExams(){return [...new Set([...Object.values(db).flat().map(v=>v[0]),...Object.values(queue).map(q=>q.x)].filter(Boolean))]}
+function openPick(r){busy=true;$('pT').textContent='Assign '+r+' to which queue?';const b=$('pB');b.innerHTML='';
+  qExams().forEach(x=>{const t=document.createElement('button');t.textContent=sh(x)+' queue';
+    t.onclick=()=>{const q=enqueue(r,[[x,'',1,'']]);closePick();toast('Queued: '+sh(x)+' No. '+q[0].n)};b.appendChild(t)});
   const n=document.createElement('button');n.textContent="Don't queue";n.onclick=closePick;b.appendChild(n);$('pick').hidden=false}
 function closePick(){$('pick').hidden=true;busy=false;upd()}
 
@@ -352,38 +348,33 @@ $('btnView').onclick=()=>{$('vq').value='';renderView();$('viewer').hidden=false
 $('vx').onclick=()=>$('viewer').hidden=true;$('vq').oninput=renderView;
 
 /* ---------- queue view ---------- */
-let qv=store.get('gate.qv',{x:'',s:null});
+let qv={x:(store.get('gate.qv',{})||{}).x||''};
 const sh=x=>/viva|oral/i.test(x)?'Viva':/written/i.test(x)?'Written':x;
-const slotVal=t=>{const m=/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i.exec(t||'');if(!m)return 1e6;let h=+m[1]%12;if(/pm/i.test(m[3]||''))h+=12;return h*60+(+m[2]||0)};
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const bs=()=>Math.max(1,parseInt($('qbs').value)||store.get('gate.bs',20));
 const waiting=a=>a.filter(q=>!q.d).length;
 function renderQ(keep){
-  const all=Object.values(queue),ex=[...new Set([...Object.values(db).flat().map(v=>v[0]),...all.map(q=>q.x)].filter(Boolean))];
+  const all=Object.values(queue),ex=qExams();
   if(!ex.includes(qv.x))qv.x=ex[0]||'';
-  const mine=all.filter(q=>q.x===qv.x),slots=[...new Set(mine.map(q=>q.s))].sort((a,b)=>slotVal(a)-slotVal(b));
-  if(!slots.includes(qv.s))qv.s=slots.find(s=>mine.some(q=>q.s===s&&!q.d));
-  if(!slots.includes(qv.s))qv.s=slots.length?slots[0]:null;
   store.set('gate.qv',qv);
+  const mine=all.filter(q=>q.x===qv.x).sort((a,b)=>a.n-b.n);
   $('qt').innerHTML=ex.map(x=>'<button class="tb'+(x===qv.x?' on':'')+'" data-x="'+esc(x)+'">'+esc(sh(x))+' ('+waiting(all.filter(q=>q.x===x))+')</button>').join('');
-  $('qs').innerHTML=slots.map(s=>'<button class="tb'+(s===qv.s?' on':'')+'" data-s="'+esc(s)+'">'+esc(s||'No slot')+' ('+waiting(mine.filter(q=>q.s===s))+')</button>').join('');
-  const sq=$('qq').value.replace(/\D/g,''),isW=/written/i.test(qv.x),B=bs();
-  const inSlot=mine.filter(q=>q.s===qv.s),rows=(sq?mine.filter(q=>q.r.includes(sq)):inSlot).sort((a,b)=>slotVal(a.s)-slotVal(b.s)||a.n-b.n);
-  $('qcnt').textContent=sq?rows.length+' match(es) in '+sh(qv.x):'Waiting '+waiting(inSlot)+' \u00b7 Sent '+(inSlot.length-waiting(inSlot));
+  const sq=$('qq').value.replace(/\D/g,''),isW=/written/i.test(qv.x),B=bs(),rows=sq?mine.filter(q=>q.r.includes(sq)):mine;
+  $('qcnt').textContent=sq?rows.length+' match(es) in '+sh(qv.x):'Waiting '+waiting(mine)+' \u00b7 Sent '+(mine.length-waiting(mine));
   $('qb').hidden=!isW;$('qpdf').disabled=!mine.length;
-  $('ql').innerHTML=rows.map(q=>'<div class="qr'+(q.d?' sent':'')+'"><div class="qn">'+q.n+'</div><div class="qi"><div class="qname">'+esc(q.nm||'-')+'</div><div class="qroll">'+q.r.slice(0,5)+'<b>'+q.r.slice(5)+'</b>'+(sq?'  '+esc(q.s||'No slot'):'')+(isW?'  Batch '+Math.ceil(q.n/B):'')+'</div></div><button data-k="'+esc(q.r+'|'+q.x)+'">'+(q.d?'Undo':'Sent')+'</button></div>').join('')||'<p style="padding:10px">No students queued yet.</p>';
+  $('ql').innerHTML=rows.map(q=>'<div class="qr'+(q.d?' sent':'')+'"><div class="qn">'+q.n+'</div><div class="qi"><div class="qname">'+esc(q.nm||'-')+'</div><div class="qroll">'+q.r.slice(0,5)+'<b>'+q.r.slice(5)+'</b>'+(q.s?'  '+esc(q.s):'')+(isW?'  Batch '+Math.ceil(q.n/B):'')+'</div></div><button data-k="'+esc(q.r+'|'+q.x)+'">'+(q.d?'Undo':'Sent')+'</button></div>').join('')||'<p style="padding:10px">No students queued yet.</p>';
   const l=$('ql');if(keep)l.scrollTop=keep.top;else{const f=l.querySelector('.qr:not(.sent)');l.scrollTop=f&&!sq?f.offsetTop:0}
 }
 $('btnQ').onclick=()=>{$('qq').value='';$('qbs').value=store.get('gate.bs',20);renderQ();$('queue').hidden=false};
 $('qx').onclick=()=>{$('queue').hidden=true;upd()};
 $('qq').oninput=()=>renderQ();
 $('qbs').onchange=()=>{store.set('gate.bs',bs());renderQ({top:$('ql').scrollTop})};
-$('qt').onclick=e=>{const b=e.target.closest('[data-x]');if(b){qv={x:b.dataset.x,s:null};renderQ()}};
-$('qs').onclick=e=>{const b=e.target.closest('[data-s]');if(b){qv.s=b.dataset.s;renderQ()}};
+$('qt').onclick=e=>{const b=e.target.closest('[data-x]');if(b){qv={x:b.dataset.x};renderQ()}};
 $('ql').onclick=e=>{const b=e.target.closest('button[data-k]'),q=b&&queue[b.dataset.k];if(!q)return;
   q.d=q.d?'':new Date().toISOString();store.set('gate.q',queue);renderQ({top:$('ql').scrollTop});upd()};
-$('qmb').onclick=()=>{const B=bs();store.set('gate.bs',B);const w=Object.values(queue).filter(q=>q.x===qv.x&&q.s===qv.s&&!q.d);
-  if(!w.length)return toast('Nothing waiting in this slot');
+// Mark batch sent: every waiting student in the lowest batch (queue no. / batch size) that still has anyone waiting
+$('qmb').onclick=()=>{const B=bs();store.set('gate.bs',B);const w=Object.values(queue).filter(q=>q.x===qv.x&&!q.d);
+  if(!w.length)return toast('Nothing waiting in this queue');
   const mb=Math.min(...w.map(q=>Math.ceil(q.n/B))),hit=w.filter(q=>Math.ceil(q.n/B)===mb),t=new Date().toISOString();
   hit.forEach(q=>q.d=t);store.set('gate.q',queue);renderQ({top:$('ql').scrollTop});upd();toast('Batch '+mb+' marked sent ('+hit.length+' students)')};
 $('qpdf').onclick=()=>exportPdf(qv.x);
@@ -404,18 +395,14 @@ function buildPdf(pages){
   out+='xref\n0 '+o.length+'\n0000000000 65535 f \n'+off.slice(1).map(v=>String(v).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<</Size '+o.length+'/Root 1 0 R>>\nstartxref\n'+x+'\n%%EOF';
   const b=new Uint8Array(out.length);for(let i=0;i<out.length;i++)b[i]=out.charCodeAt(i)&255;return b}
 function queuePdf(x){
-  const rows=Object.values(queue).filter(q=>q.x===x),isW=/written/i.test(x),B=bs(),pages=[],ttl=sh(x)+' student queue',mx=isW?50:61;let ops,y;
+  const rows=Object.values(queue).filter(q=>q.x===x).sort((a,b)=>a.n-b.n),isW=/written/i.test(x),B=bs(),pages=[],ttl=sh(x)+' student queue',mx=isW?50:61;let ops,y;
   const T=(f,z,px,py,t)=>'BT /'+f+' '+z+' Tf '+px+' '+py+' Td ('+String(t).replace(/[^\x20-\x7e\xa0-\xff]/g,'?').replace(/([\\()])/g,'\\$1')+') Tj ET';
-  const np=()=>{ops=[];pages.push(ops);y=800;ops.push(T('F2',13,40,y,ttl));y-=28};
-  const head=(s,c)=>{ops.push(T('F2',11,40,y,'Slot: '+(s||'No slot')+(c?' (cont.)':'')));y-=18;
+  const np=()=>{ops=[];pages.push(ops);y=800;ops.push(T('F2',13,40,y,ttl));y-=28;
     ops.push(T('F2',10,40,y,'Queue No.'),T('F2',10,115,y,'Roll No.'),T('F2',10,185,y,'Name'));if(isW)ops.push(T('F2',10,500,y,'Batch'));y-=16};
   np();
-  [...new Set(rows.map(q=>q.s))].sort((a,b)=>slotVal(a)-slotVal(b)).forEach(s=>{
-    if(y<130)np();head(s,false);
-    rows.filter(q=>q.s===s).sort((a,b)=>a.n-b.n).forEach(q=>{if(y<50){np();head(s,true)}
-      const nm=q.nm||'-';ops.push(T('F1',10,40,y,q.n),T('F1',10,115,y,q.r),T('F1',10,185,y,nm.length>mx?nm.slice(0,mx-1)+'.':nm));
-      if(isW)ops.push(T('F1',10,500,y,Math.ceil(q.n/B)));y-=14});
-    y-=12});
+  rows.forEach(q=>{if(y<50)np();const nm=q.nm||'-';
+    ops.push(T('F1',10,40,y,q.n),T('F1',10,115,y,q.r),T('F1',10,185,y,nm.length>mx?nm.slice(0,mx-1)+'.':nm));
+    if(isW)ops.push(T('F1',10,500,y,Math.ceil(q.n/B)));y-=14});
   return buildPdf(pages)}
 async function exportPdf(x){
   if(!Object.values(queue).some(q=>q.x===x))return toast('Nothing queued for this exam');

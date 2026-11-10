@@ -116,31 +116,30 @@ Real-world checks: scan 20 real cards (including worn or glossy ones). At least 
 
 ## Queue
 
-The queue numbers students as they arrive in the waiting area, lists who is waiting, and lets you mark each student as sent to the exam room.
+The queue numbers students as they arrive in the waiting area, lists who is waiting, and lets you mark each student as sent to the exam room. There is **one running queue per exam** (a Viva queue and a Written queue). The time slot does not affect the numbering, so every student in an exam has their own number.
 
 **Setup:** use one phone for the queue, and set **Exam checked at this phone** to **All exams**. The queue is per phone. Two phones would each number from 1.
 
 **How it works**
-1. Scan each student as they enter the waiting area. The green screen shows the **No.**, the name, the roll, the time slot and the exam. Numbers run per exam and per time slot, starting at 1. A student who arrives early lands in their own slot's list.
-2. Tap **Queue (n)** in the top bar. Choose the exam tab (Viva or Written), then the time slot. The list shows each student's number, name and roll (last 3 digits in bold, to tell similar names apart). It opens at the first waiting student.
+1. Scan each student as they enter the waiting area. The green screen shows the **No.**, the name, the roll, the time slot and the exam. Numbers run 1, 2, 3 and so on within each exam, in the order students are scanned.
+2. Tap **Queue (n)** in the top bar and choose the exam tab (Viva or Written). The list shows each student's number, name and roll (last 3 digits in bold, to tell similar names apart), with the student's time slot as a small label. It opens at the first waiting student.
 3. Call students by number and name, check the roll on the card, and tap **Sent**. The row dims and the button becomes **Undo**. Rows never move or change number. Marking Sent is also how you clear a student who was scanned by mistake.
-4. Search by roll number to find a student's place, across all slots of the exam.
+4. Search by roll number to find a student's place.
 5. **Written tab:** each row shows its Batch (queue number divided by the batch size, rounded up). The batch size defaults to 20 and can be changed. **Mark batch sent** marks every waiting student in the lowest batch that still has anyone waiting.
-6. **Export PDF** (on each tab) saves `viva_student_queue.pdf` or `short_exam_queue.pdf`: Queue No., Roll No. and Name for every queued student of that exam, a section per time slot in queue order (the Written file also has a Batch column). On an iPhone the share sheet opens so you can save it to Files. Names are plain Latin text in the PDF.
+6. **Export PDF** (on each tab) saves `viva_student_queue.pdf` or `short_exam_queue.pdf`: Queue No., Roll No. and Name for every queued student of that exam, in queue order, as one list (the Written file also has a Batch column). On an iPhone the share sheet opens so you can save it to Files. Names are plain Latin text in the PDF.
 7. Scanning is paused while the Queue, Settings or the list viewer is open.
 
-**Admit anyway on a red screen:** the student is admitted and queued. If the exam and time slot are known, they are queued directly. Otherwise a list appears asking which queue to use (for example "Viva 4:00 PM"), with a "Don't queue" button. A roll that is not in any list asks for the exam and slot.
+**Admit anyway on a red screen:** the student is admitted and added to the queue of their exam, with the next number. If the roll is not in any list, a prompt asks which queue to use (Viva or Written), with a "Don't queue" button.
 
-**Reset entries** clears the queue and the Sent marks too. Loading a new CSV keeps the queue until you reset or wipe.
+**Reset entries** clears the queue and the Sent marks too. Loading a new CSV keeps the queue until you reset or wipe. If an older version was installed, tap **Reset entries** once so old numbers are cleared.
 
 ### Queue tests
 
 | Test | Expected result |
 |---|---|
 | Load a CSV with `Students Name` left of `Roll No` | View list shows each name under its roll |
-| Scan a registered viva student, then another | Green with name and No. 1, then No. 2 |
-| Scan a written student | Numbered separately, starting at 1 |
-| Scan a student from a different time slot | That slot has its own list, starting at 1 |
+| Scan viva students from different time slots | Green with No. 1, 2, 3 and so on, in scan order, with no repeats |
+| Scan a written student | Written has its own numbers, starting at 1 |
 | Scan the same card again | Orange DUPLICATE with the same No. |
 | Tap Sent, then scan that card again | Orange says it was already sent |
 | Tap Sent on a row | Row dims, button becomes Undo, counters change, other numbers stay |
@@ -150,13 +149,12 @@ The queue numbers students as they arrive in the waiting area, lists who is wait
 | Two students with the same name | Told apart by roll, last 3 digits bold |
 | Written student, batch size 20 | Batch 1 for numbers 1 to 20, Batch 2 from 21 |
 | Mark batch sent, after tapping Sent on one student of that batch | The rest of that batch is marked, nobody from the next batch |
-| Admit anyway on a roll that is not in any list | Asks which queue (exam and slot), or Don't queue |
-| Admit anyway on a Written not-eligible roll (no time slot) | Asks which Written slot |
-| Admit anyway on an Oral not-eligible roll (has a slot) | Queued directly in that slot |
-| Search the queue by roll digits | Matches across all slots of the exam. Letters cannot be typed |
+| Admit anyway on a roll that is in a list (any slot, or none) | Queued in that exam with the next number |
+| Admit anyway on a roll that is not in any list | Asks Viva queue, Written queue or Don't queue |
+| Search the queue by roll digits | Matches in that exam's queue. Letters cannot be typed |
 | Reset entries | Queue is empty |
 | Wipe all data | List, names and queue are gone |
-| Export PDF on the Viva tab | `viva_student_queue.pdf` with every queued viva student, a section per slot |
+| Export PDF on the Viva tab | `viva_student_queue.pdf`: one list, every queued viva student, in queue order |
 | Export PDF on the Written tab | `short_exam_queue.pdf` with a Batch column |
 | Export a list longer than one page | Header row repeats, no rows cut off, page numbers shown |
 | Export in airplane mode, then open the file | Works offline and opens in a PDF viewer |
@@ -179,7 +177,7 @@ The queue numbers students as they arrive in the waiting area, lists who is wait
 | Load CSV files | Reads one or more files and replaces the list |
 | Add more files | Reads more files and merges them into the list |
 | View list | Opens the list in the app, with search |
-| Queue (top bar) | Opens the queue: tabs per exam, slots, Sent / Undo, Mark batch sent, Export PDF |
+| Queue (top bar) | Opens the queue: one list per exam, Sent / Undo, Mark batch sent (Written), Export PDF |
 | Reset entries | Forgets who has entered and clears the queue and Sent marks. Keeps the list |
 | Wipe all data | Removes the list, names, entries, queue and file summary from this phone |
 
@@ -192,7 +190,7 @@ The one way data leaves the phone is **Export PDF**, which you start yourself. T
 ## Updating the app
 
 1. Edit the file and upload it to GitHub. Netlify redeploys automatically.
-2. In `sw.js`, raise the version number (for example `gate-v10` to `gate-v11`).
+2. In `sw.js`, raise the version number (for example `gate-v11` to `gate-v12`).
 3. Open the app on each phone with internet, twice. The first open downloads the update, the second runs it.
 4. If you changed the logo or icons, remove the app from the home screen and add it again.
 
