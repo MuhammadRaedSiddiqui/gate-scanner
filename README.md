@@ -27,11 +27,11 @@ The app reads your eligibility sheets directly, so you can use the Google Sheets
 
 **How a file is read**
 - The header row is the first row with a cell starting with `roll` (any capitals), for example `Roll No`. Title rows above it are fine.
-- Next to each roll column, the app looks for a `Time Slots` column (header contains "time") and an `Eligibility` column (header contains "eligib").
+- Next to each roll column, the app looks for a `Time Slots` column (header contains "time") and an `Eligibility` column (header contains "eligib"). The student name comes from a `Name` column (header contains "name"): the nearest one to the **left** of each Roll column, never past the previous Roll column. This matches sheets laid out as `S No | Students Name | Roll No | Time Slots | ...`.
 - Several roll blocks side by side are all read. For example, an eligible table on the left and a Fail or Rejected table on the right.
 - A row is eligible if its Eligibility text is `Eligible`, `Pass`, `Passed`, `Yes`, `OK`, `Registered` or `Selected`. Any other text, or an empty cell, counts as not eligible. If a block has no Eligibility column, every row in it is eligible.
 - Roll numbers longer than 8 digits have their leading zeros stripped. Shorter ones are padded to 8 digits (`36857` becomes `00036857`).
-- The same roll repeated in one exam is merged (an eligible row wins). Only the roll, time slot, exam and eligibility are kept. Names and scores are dropped when the file loads.
+- The same roll repeated in one exam is merged (an eligible row wins). The roll, name, time slot, exam and eligibility are kept. Scores are dropped when the file loads.
 
 A plain CSV with one `roll` column also works. It gets no time slot, and the exam label is the file name.
 
@@ -114,6 +114,54 @@ Real-world checks: scan 20 real cards (including worn or glossy ones). At least 
 8. Keep a printed copy of the lists as a backup.
 9. After the exam: Settings > **Wipe all data**, and delete the CSV files from the phone.
 
+## Queue
+
+The queue numbers students as they arrive in the waiting area, lists who is waiting, and lets you mark each student as sent to the exam room.
+
+**Setup:** use one phone for the queue, and set **Exam checked at this phone** to **All exams**. The queue is per phone. Two phones would each number from 1.
+
+**How it works**
+1. Scan each student as they enter the waiting area. The green screen shows the **No.**, the name, the roll, the time slot and the exam. Numbers run per exam and per time slot, starting at 1. A student who arrives early lands in their own slot's list.
+2. Tap **Queue (n)** in the top bar. Choose the exam tab (Viva or Written), then the time slot. The list shows each student's number, name and roll (last 3 digits in bold, to tell similar names apart). It opens at the first waiting student.
+3. Call students by number and name, check the roll on the card, and tap **Sent**. The row dims and the button becomes **Undo**. Rows never move or change number. Marking Sent is also how you clear a student who was scanned by mistake.
+4. Search by roll number to find a student's place, across all slots of the exam.
+5. **Written tab:** each row shows its Batch (queue number divided by the batch size, rounded up). The batch size defaults to 20 and can be changed. **Mark batch sent** marks every waiting student in the lowest batch that still has anyone waiting.
+6. **Export PDF** (on each tab) saves `viva_student_queue.pdf` or `short_exam_queue.pdf`: Queue No., Roll No. and Name for every queued student of that exam, a section per time slot in queue order (the Written file also has a Batch column). On an iPhone the share sheet opens so you can save it to Files. Names are plain Latin text in the PDF.
+7. Scanning is paused while the Queue, Settings or the list viewer is open.
+
+**Admit anyway on a red screen:** the student is admitted and queued. If the exam and time slot are known, they are queued directly. Otherwise a list appears asking which queue to use (for example "Viva 4:00 PM"), with a "Don't queue" button. A roll that is not in any list asks for the exam and slot.
+
+**Reset entries** clears the queue and the Sent marks too. Loading a new CSV keeps the queue until you reset or wipe.
+
+### Queue tests
+
+| Test | Expected result |
+|---|---|
+| Load a CSV with `Students Name` left of `Roll No` | View list shows each name under its roll |
+| Scan a registered viva student, then another | Green with name and No. 1, then No. 2 |
+| Scan a written student | Numbered separately, starting at 1 |
+| Scan a student from a different time slot | That slot has its own list, starting at 1 |
+| Scan the same card again | Orange DUPLICATE with the same No. |
+| Tap Sent, then scan that card again | Orange says it was already sent |
+| Tap Sent on a row | Row dims, button becomes Undo, counters change, other numbers stay |
+| Tap Undo | Row is waiting again |
+| Close the app, restart the phone, reopen in airplane mode | Queue and Sent marks are intact |
+| Open Queue with a card in front of the camera | Nothing is admitted, and closing does not admit it |
+| Two students with the same name | Told apart by roll, last 3 digits bold |
+| Written student, batch size 20 | Batch 1 for numbers 1 to 20, Batch 2 from 21 |
+| Mark batch sent, after tapping Sent on one student of that batch | The rest of that batch is marked, nobody from the next batch |
+| Admit anyway on a roll that is not in any list | Asks which queue (exam and slot), or Don't queue |
+| Admit anyway on a Written not-eligible roll (no time slot) | Asks which Written slot |
+| Admit anyway on an Oral not-eligible roll (has a slot) | Queued directly in that slot |
+| Search the queue by roll digits | Matches across all slots of the exam. Letters cannot be typed |
+| Reset entries | Queue is empty |
+| Wipe all data | List, names and queue are gone |
+| Export PDF on the Viva tab | `viva_student_queue.pdf` with every queued viva student, a section per slot |
+| Export PDF on the Written tab | `short_exam_queue.pdf` with a Batch column |
+| Export a list longer than one page | Header row repeats, no rows cut off, page numbers shown |
+| Export in airplane mode, then open the file | Works offline and opens in a PDF viewer |
+| Open a tab with no queued students | Export PDF is disabled |
+
 ## How scanning works
 
 - The app uses the phone's built-in barcode detector when it has one (Chrome on Android usually does). It copes better with blur and damage.
@@ -131,17 +179,20 @@ Real-world checks: scan 20 real cards (including worn or glossy ones). At least 
 | Load CSV files | Reads one or more files and replaces the list |
 | Add more files | Reads more files and merges them into the list |
 | View list | Opens the list in the app, with search |
-| Reset entries | Forgets who has entered, keeps the list |
-| Wipe all data | Removes the list, entries and file summary from this phone |
+| Queue (top bar) | Opens the queue: tabs per exam, slots, Sent / Undo, Mark batch sent, Export PDF |
+| Reset entries | Forgets who has entered and clears the queue and Sent marks. Keeps the list |
+| Wipe all data | Removes the list, names, entries, queue and file summary from this phone |
 
 ## Privacy
 
-The phone stores only the roll list (roll, exam, time slot, eligible or not) and a small record of who has entered (roll, exam and the time of the first entry), so it can show DUPLICATE. There is no scan history and no log. Nothing is exported or sent anywhere. **Wipe all data** removes all of it.
+The phone stores the roll list (roll, name, exam, time slot, eligible or not), a small record of who has entered (roll, exam, time of first entry) so it can show DUPLICATE, and the queue (roll, name, exam, slot, queue number and Sent time). There is no scan history and no log. Nothing is sent anywhere, and the repo holds no student data. **Wipe all data** removes all of it.
+
+The one way data leaves the phone is **Export PDF**, which you start yourself. The PDF contains names and roll numbers and is saved in the phone's Downloads (or Files). Delete these files after the exam.
 
 ## Updating the app
 
 1. Edit the file and upload it to GitHub. Netlify redeploys automatically.
-2. In `sw.js`, raise the version number (for example `gate-v9` to `gate-v10`).
+2. In `sw.js`, raise the version number (for example `gate-v10` to `gate-v11`).
 3. Open the app on each phone with internet, twice. The first open downloads the update, the second runs it.
 4. If you changed the logo or icons, remove the app from the home screen and add it again.
 
@@ -153,6 +204,7 @@ The phone stores only the roll list (roll, exam, time slot, eligible or not) and
 | Camera stopped | Tap "Tap to restart". This happens after a call, an app switch or locking the phone. |
 | Everyone shows INVALID CODE | The QR is not exactly 8 digits. Check what the card contains. Type the roll manually meanwhile. |
 | Hard-to-scan cards (scratched, blurry, laminated) | Tilt the card slightly to avoid glare, hold it 15 to 25 cm away, try the Zoom button, avoid direct light on the card, wipe the card clean, and use manual entry as the last resort. |
+| Names show as a dash | The CSV has no `Name` column, or its header does not contain "name". Fix the sheet and reload the CSV files. |
 | Everyone shows NOT REGISTERED | The list is missing or wrong. Reload the CSV files and use View list to check. |
 | WRONG EXAM for many students | "Exam checked at this phone" is set to the wrong exam. |
 | Netlify badge covers the Check button | Turn it off in Netlify: Project configuration > General > Powered by Netlify badge. |
@@ -167,4 +219,5 @@ The phone stores only the roll list (roll, exam, time slot, eligible or not) and
 - Duplicate detection works per phone only. Use roll ranges, or one gate per phone.
 - A QR scan proves the card, not the person. Check the physical card and the student.
 - Late changes to the lists need fresh CSV files loaded on each phone.
+- The queue lives on one phone only and cannot be merged. A scan by mistake stays in the queue until you mark it Sent.
 - The app keeps no audit trail of overrides. If you need one, keep a paper log at the help desk.

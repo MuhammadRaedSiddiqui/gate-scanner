@@ -40,17 +40,27 @@ input{font:inherit;padding:12px;border-radius:10px;border:1px solid #cbd5e1;back
 #panel h2,#panel h3{margin:0}
 select{font:inherit;padding:12px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;color:#111827;width:100%}
 #loadInfo{white-space:pre-line;font-size:14px;color:#475569}
-#viewer{position:fixed;inset:0;background:#f4f6f8;z-index:8;display:flex;flex-direction:column;gap:10px;padding:calc(16px + env(safe-area-inset-top)) 16px 16px}
+#viewer,#queue{position:fixed;inset:0;background:#f4f6f8;z-index:8;display:flex;flex-direction:column;gap:10px;padding:calc(16px + env(safe-area-inset-top)) 16px 16px}
 .vh{display:flex;justify-content:space-between;align-items:center}
 #vl{flex:1;overflow:auto;background:#fff;border:1px solid #cbd5e1;border-radius:10px;padding:10px;font:14px/1.7 ui-monospace,monospace;white-space:pre}
 #toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);background:#111827e6;color:#fff;padding:10px 16px;border-radius:20px;z-index:9;max-width:90%;text-align:center}
+.hb{display:flex;gap:6px}.hb button{padding:10px 12px}.hl{min-width:0}
+#ov .nm{font-size:30px;font-weight:700}#ov .no{font-size:56px;font-weight:800}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}.tb{padding:10px 12px}.tb.on{background:#15803d;color:#fff}
+#qcnt{font-weight:600}
+#ql{flex:1;overflow:auto;position:relative;background:#fff;border:1px solid #cbd5e1;border-radius:10px}
+.qr{display:flex;align-items:center;gap:10px;padding:10px;border-bottom:1px solid #e5e7eb}.qr.sent{opacity:.45}
+.qn{font-size:26px;font-weight:800;min-width:50px}.qi{flex:1;min-width:0}.qname{font-weight:600}.qroll{font:14px ui-monospace,monospace;color:#475569}
+#pick{position:fixed;inset:0;background:#0009;z-index:8;display:flex;align-items:flex-end}
+#pick>div{background:#fff;width:100%;padding:16px;display:grid;gap:8px;border-radius:16px 16px 0 0;max-height:80%;overflow:auto}
+#pB{display:grid;gap:8px}
 </style>
 </head>
 <body>
 <div id="app">
   <header>
     <div class="hl"><img class="logo" src="logo.png" alt="Logo"><div><b id="sAdm">0</b> in &middot; <span id="sList">0</span> loaded<span id="gateTag"></span></div></div>
-    <button id="btnSet">Settings</button>
+    <div class="hb"><button id="btnQ">Queue (0)</button><button id="btnSet">Settings</button></div>
   </header>
   <div id="banner" hidden></div>
   <main>
@@ -63,7 +73,7 @@ select{font:inherit;padding:12px;border-radius:10px;border:1px solid #cbd5e1;bac
       <p id="startMsg"></p>
     </div>
     <div id="ov" hidden>
-      <h1 id="oT"></h1><div class="roll" id="oR"></div><div class="sub" id="oS"></div>
+      <h1 id="oT"></h1><div class="no" id="oNo"></div><div class="nm" id="oN"></div><div class="roll" id="oR"></div><div class="sub" id="oS"></div>
       <div class="acts" id="oA" hidden><button id="btnOver">Admit anyway (approved)</button><button id="btnDis">Dismiss</button></div>
     </div>
   </main>
@@ -90,6 +100,17 @@ select{font:inherit;padding:12px;border-radius:10px;border:1px solid #cbd5e1;bac
   <input id="vq" inputmode="numeric" placeholder="Search roll number" autocomplete="off">
   <div id="vl"></div>
 </div>
+<div id="queue" hidden>
+  <div class="vh"><b id="qc">Queue</b><button id="qx">Close</button></div>
+  <div class="tabs" id="qt"></div>
+  <div class="tabs" id="qs"></div>
+  <div id="qcnt"></div>
+  <div class="row" id="qb" hidden><input id="qbs" inputmode="numeric" maxlength="3" aria-label="Batch size"><button id="qmb">Mark batch sent</button></div>
+  <input id="qq" inputmode="numeric" placeholder="Search roll number" autocomplete="off">
+  <div id="ql"></div>
+  <button class="pri" id="qpdf">Export PDF</button>
+</div>
+<div id="pick" hidden><div><b id="pT"></b><div id="pB"></div></div></div>
 <div id="toast" hidden></div>
 
 <script src="jsQR.js"></script>
@@ -101,12 +122,13 @@ function loadDb(){const v=store.get('gate.list',{});if(Array.isArray(v)){const o
 const rm=(...ks)=>ks.forEach(k=>{try{localStorage.removeItem(k)}catch(e){}});
 rm('gate.log','gate.exp','gate.torch'); // one-time cleanup of old keys
 function loadAdm(){const v=store.get('gate.adm',{});return(v&&typeof v==='object'&&!Array.isArray(v))?v:{}}
-let db=loadDb(),
+let db=loadDb(), queue=store.get('gate.q',{}), pending=null,
     cfg=store.get('gate.cfg',{gate:'',from:'',to:''}), admitted=loadAdm(), skipped=0, dupes=0, conflicts=0, srcs=store.get('gate.src',[]), busy=false, hideT=null, lastRoll='', lastSeen=0, stream=null, actx=null, toastT=null;
 
 const norm=r=>{const d=String(r).replace(/\D/g,'');return(!d||d.length>8)?null:d.padStart(8,'0')};
 
 const tm=iso=>new Date(iso).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+const paused=()=>!$('panel').hidden||!$('viewer').hidden||!$('queue').hidden||!$('pick').hidden;
 const nrolls=()=>Object.keys(db).length, key=r=>r+'|'+(cfg.exam||'');
 
 function toast(m,ms){const t=$('toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,ms||2500)}
@@ -115,25 +137,43 @@ function toast(m,ms){const t=$('toast');t.textContent=m;t.hidden=false;clearTime
 function inRange(r){const f=norm(cfg.from),t=norm(cfg.to);return !((f&&r<f)||(t&&r>t))}
 function admit(r){const k=key(r);if(!admitted[k]){admitted[k]=new Date().toISOString();store.set('gate.adm',admitted)}} // first entry time only
 const fmt=v=>v.map(x=>'time: '+(x[1]||'-')+'\nexam: '+(x[0]||'-')).join('\n\n');
+const fmtQ=(ok,q)=>ok.map((v,i)=>(q.length>1&&q[i]?'No. '+q[i].n+'\n':'')+'time: '+(v[1]||'-')+'\nexam: '+(v[0]||'-')).join('\n\n');
+const nameOf=e=>(e.find(v=>v[3])||[])[3]||'';
+function enqueue(r,ents){const out=[];let ch=false;
+  ents.forEach(v=>{const k=r+'|'+v[0],s=v[1]||'';
+    if(!queue[k]){let n=1;for(const z of Object.values(queue))if(z.x===v[0]&&z.s===s&&z.n>=n)n=z.n+1;queue[k]={r,x:v[0],s,n,nm:v[3]||'',d:''};ch=true}
+    out.push(queue[k])});
+  if(ch)store.set('gate.q',queue);return out}
 function decide(r){
   if(!nrolls())return show('grey','LOAD LIST FIRST','Open Settings and load the CSV',r);
-  if(!inRange(r)){return show('blue','WRONG GATE','This roll belongs to another gate',r,true)}
-  const e=db[r]||[],f=e.filter(v=>!cfg.exam||v[0]===cfg.exam),ok=f.filter(v=>v[2]);
-  if(admitted[key(r)])return show('orange','DUPLICATE','Already entered at '+tm(admitted[key(r)])+(ok.length?'\n\n'+fmt(ok):''),r);
-  if(ok.length){admit(r);return show('green','REGISTERED',fmt(ok),r)}
-
-  if(f.length)return show('red','NOT ELIGIBLE','Listed as not eligible: '+f.map(v=>v[0]||'this exam').join(', '),r,true);
-  const o=e.filter(v=>v[2]);
-  if(o.length)return show('red','WRONG EXAM','Registered for:\n'+fmt(o),r,true);
+  const e=db[r]||[],f=e.filter(v=>!cfg.exam||v[0]===cfg.exam),ok=f.filter(v=>v[2]),o=e.filter(v=>v[2]),nm=nameOf(e);
+  pending={r,pool:f.length?f:(o.length?o:e)};
+  if(!inRange(r))return show('blue','WRONG GATE','This roll belongs to another gate',r,true,{nm});
+  if(admitted[key(r)]){const q=enqueue(r,ok);return show('orange','DUPLICATE','Already entered at '+tm(admitted[key(r)])+(q.some(z=>z.d)?'\nAlready sent in.':'')+(ok.length?'\n\n'+fmtQ(ok,q):''),r,false,{nm,no:q.length===1?q[0].n:''})}
+  if(ok.length){admit(r);const q=enqueue(r,ok);return show('green','REGISTERED',fmtQ(ok,q),r,false,{nm,no:q.length===1?q[0].n:''})}
+  if(f.length)return show('red','NOT ELIGIBLE','Listed as not eligible: '+f.map(v=>v[0]||'this exam').join(', '),r,true,{nm});
+  if(o.length)return show('red','WRONG EXAM','Registered for:\n'+fmt(o),r,true,{nm});
   show('red','NOT REGISTERED','Send to help desk',r,true)
 }
-function override(){const r=$('oR').textContent;admit(r);hide();upd();toast('Admitted manually: '+r)}
+// "Admit anyway": admit, then queue. Exam+slot known -> queued directly, otherwise the picker asks which queue.
+function override(){const p=pending;if(!p)return hide();admit(p.r);clearTimeout(hideT);$('ov').hidden=true;upd();
+  const known=p.pool.filter(v=>v[1]),unk=p.pool.filter(v=>!v[1]);
+  if(known.length){const q=enqueue(p.r,known);toast('Admitted. '+q.map(z=>sh(z.x)+' '+z.s+' No. '+z.n).join(', '))}else toast('Admitted manually: '+p.r);
+  if(unk.length||!p.pool.length)openPick(p.r,unk[0]?unk[0][0]:'',nameOf(p.pool));else busy=false}
+function queuesFor(x){const m={},add=(a,b)=>{if(!x||a===x)m[a+'\u0001'+b]={x:a,s:b}};
+  Object.values(db).forEach(a=>a.forEach(v=>v[1]&&add(v[0],v[1])));Object.values(queue).forEach(z=>z.s&&add(z.x,z.s));
+  const l=Object.values(m).sort((a,b)=>a.x<b.x?-1:a.x>b.x?1:slotVal(a.s)-slotVal(b.s));return l.length?l:(x?[{x,s:''}]:[])}
+function openPick(r,x,nm){busy=true;$('pT').textContent='Assign '+r+(nm?' ('+nm+')':'')+' to which queue?';const b=$('pB');b.innerHTML='';
+  queuesFor(x).forEach(c=>{const t=document.createElement('button');t.textContent=sh(c.x)+' '+(c.s||'No slot');
+    t.onclick=()=>{const q=enqueue(r,[[c.x,c.s,1,nm]]);closePick();toast('Queued: '+t.textContent+', No. '+q[0].n)};b.appendChild(t)});
+  const n=document.createElement('button');n.textContent="Don't queue";n.onclick=closePick;b.appendChild(n);$('pick').hidden=false}
+function closePick(){$('pick').hidden=true;busy=false;upd()}
 
 /* ---------- result screen ---------- */
-function show(kind,title,sub,roll,act){
+function show(kind,title,sub,roll,act,x){x=x||{};
   busy=true;clearTimeout(hideT);
   const o=$('ov');o.className=kind;o.hidden=false;
-  $('oT').textContent=title;$('oR').textContent=roll||'';$('oS').textContent=sub||'';$('oA').hidden=!act;
+  $('oT').textContent=title;$('oR').textContent=roll||'';$('oS').textContent=sub||'';$('oA').hidden=!act;$('oN').textContent=x.nm||'';$('oNo').textContent=x.no?'No. '+x.no:'';
   if(!act)hideT=setTimeout(hide,2200);
   beep(kind);upd();
 }
@@ -225,7 +265,7 @@ function onCode(q){const now=Date.now();lastDecode=now;objSince=0;
   else if(q===lastRoll&&now-lastSeen<1200){lastSeen=now} // same card still in view: ignore until it leaves the frame
   else{lastSeen=now;lastRoll=q;/^\d{8}$/.test(q)?decide(q):show('grey','INVALID CODE','Not a roll number: '+q.slice(0,20),'')}}
 async function tick(id){
-  if(!$('panel').hidden||!$('viewer').hidden){lastSeen=Date.now();objSince=0;return} // paused while Settings / list viewer is open
+  if(paused()){lastSeen=Date.now();objSince=0;return} // paused while Settings / list viewer is open
   if(vid.readyState<2||!vid.videoWidth)return;
   const vw=vid.videoWidth,vh=vid.videoHeight,vr=vid.getBoundingClientRect(),fr=guide.getBoundingClientRect();
   if(!vr.width||!vr.height)return;
@@ -238,7 +278,7 @@ async function tick(id){
   cx.drawImage(vid,sx,sy,sw,sh,0,0,w,h);
   let q=null;
   if(detector){try{const r=await detector.detect(cv);derr=0;if(r&&r.length&&r[0].rawValue)q=String(r[0].rawValue).trim()}catch(e){if(++derr>5)detector=null}}
-  if(id!==loopId||!$('panel').hidden||!$('viewer').hidden)return;
+  if(id!==loopId||paused())return;
   if(!q){const im=cx.getImageData(0,0,w,h);try{q=ladder(im,w,h)}catch(e){q=null}if(!q)hintCheck(im)}
   if(q)onCode(q);
 }
@@ -265,14 +305,16 @@ function parseSheet(text,fname){
   const exam=/oral|viva/.test(s)?'Oral Viva':/written/.test(s)?'Written Exam':fname.replace(/\.[^.]*$/,'');
   let tabs=[];
   if(hi>=0){const h=rows[hi],rc=h.map((c,i)=>/^\s*roll/i.test(c)?i:-1).filter(i=>i>=0);
-    rc.forEach((j,k)=>{const end=k+1<rc.length?rc[k+1]:h.length,find=re=>{for(let i=j;i<end;i++)if(re.test(h[i]||''))return i;return -1};
-      tabs.push({r:j,t:find(/time/i),e:find(/eligib/i)})})}
-  else tabs=[{r:0,t:-1,e:-1}];
+    rc.forEach((j,k)=>{const end=k+1<rc.length?rc[k+1]:h.length,lo=k>0?rc[k-1]:-1,find=re=>{for(let i=j;i<end;i++)if(re.test(h[i]||''))return i;return -1},
+      left=()=>{for(let i=j-1;i>lo;i--)if(/name/i.test(h[i]||''))return i;return -1}; // Name column sits LEFT of Roll: nearest one, never past the previous roll column
+      let n=left();if(n<0&&k===rc.length-1)n=find(/name/i);
+      tabs.push({r:j,t:find(/time/i),e:find(/eligib/i),n})})}
+  else tabs=[{r:0,t:-1,e:-1,n:-1}];
   rows.slice(hi+1).forEach(row=>tabs.forEach(tb=>{
     let c=(row[tb.r]||'').replace(/\s/g,'');if(!c)return;if(c.length>8)c=c.replace(/^0+/,'');
     if(!/^\d{1,8}$/.test(c)){if(hi>=0||/\d/.test(c))bad++;return}
     const ok=tb.e<0||/^(eligible|pass|passed|yes|ok|registered|selected)$/i.test((row[tb.e]||'').trim());
-    out.push([c.padStart(8,'0'),exam,tb.t>=0?(row[tb.t]||'').trim():'',ok])}));
+    out.push([c.padStart(8,'0'),exam,tb.t>=0?(row[tb.t]||'').trim():'',ok,tb.n>=0?(row[tb.n]||'').trim():''])}));
   return{rows:out,bad,exam}}
 let loadMode='replace';
 $('btnLoad').onclick=()=>{loadMode='replace';$('file').click()};
@@ -282,8 +324,8 @@ $('file').onchange=async ev=>{
   const add=loadMode==='add',nd=add?JSON.parse(JSON.stringify(db)):{},src=add?srcs.slice():[];let bad=0,dup=0,conf=0,tot=0;
   for(const f of files){
     const p=parseSheet(await f.text(),f.name);let n=0,x=0;
-    p.rows.forEach(([r,ex,t,ok])=>{const a=nd[r]||(nd[r]=[]),m=a.find(v=>v[0]===ex);
-      if(!m)a.push([ex,t,ok?1:0]);else{dup++;if(ok&&!m[2]){m[1]=t;m[2]=1}else if(ok&&m[2]&&t&&m[1]!==t)conf++}
+    p.rows.forEach(([r,ex,t,ok,nm])=>{const a=nd[r]||(nd[r]=[]),m=a.find(v=>v[0]===ex);
+      if(!m)a.push([ex,t,ok?1:0,nm||'']);else{dup++;if(ok&&!m[2]){m[1]=t;m[2]=1;if(nm)m[3]=nm}else if(ok&&m[2]&&t&&m[1]!==t)conf++;if(nm&&!m[3])m[3]=nm}
       ok?n++:x++});
     bad+=p.bad;tot+=n+x;src.push({name:f.name,n,x,ex:p.exam})}
   ev.target.value='';
@@ -299,20 +341,94 @@ function openPanel(){$('gate').value=cfg.gate;$('from').value=cfg.from;$('to').v
   sel.innerHTML='';sel.add(new Option('All exams',''));ex.forEach(x=>sel.add(new Option(x,x)));sel.value=cfg.exam||'';$('panel').hidden=false}
 $('btnSet').onclick=openPanel;
 $('btnClose').onclick=()=>{cfg={gate:$('gate').value.trim(),from:$('from').value.trim(),to:$('to').value.trim(),exam:$('exam').value};store.set('gate.cfg',cfg);$('panel').hidden=true;upd()};
-$('btnClrLog').onclick=()=>{if(confirm('Reset all entries? Everyone will count as not yet entered.')){admitted={};rm('gate.adm');upd();$('panel').hidden=true}};
-$('btnWipe').onclick=()=>{if(confirm('Wipe roll list and entries from this phone?')){rm('gate.list','gate.adm','gate.src');db={};admitted={};srcs=[];skipped=0;dupes=0;conflicts=0;upd();$('panel').hidden=true}};
+$('btnClrLog').onclick=()=>{if(confirm('Reset all entries? Everyone will count as not yet entered, and the queue and Sent marks are cleared.')){admitted={};queue={};rm('gate.adm','gate.q');upd();$('panel').hidden=true}};
+$('btnWipe').onclick=()=>{if(confirm('Wipe roll list and entries from this phone?')){rm('gate.list','gate.adm','gate.src','gate.q');db={};admitted={};queue={};srcs=[];skipped=0;dupes=0;conflicts=0;upd();$('panel').hidden=true}};
 
 /* ---------- list viewer ---------- */
 function renderView(){const q=$('vq').value.replace(/\D/g,''),a=Object.keys(db).sort(),r=q?a.filter(x=>x.includes(q)):a;
   $('vc').textContent=q?r.length+' of '+a.length+' shown':a.length+' rolls';
-  $('vl').textContent=r.map(k=>db[k].map(v=>k+'  '+(v[1]||'-')+'  '+(v[0]||'')+(v[2]?'':'  NOT ELIGIBLE')).join('\n')).join('\n')||'No match'}
+  $('vl').textContent=r.map(k=>db[k].map(v=>k+'  '+(v[3]||'')+'\n      '+(v[1]||'-')+'  '+(v[0]||'')+(v[2]?'':'  NOT ELIGIBLE')).join('\n')).join('\n')||'No match'}
 $('btnView').onclick=()=>{$('vq').value='';renderView();$('viewer').hidden=false};
 $('vx').onclick=()=>$('viewer').hidden=true;$('vq').oninput=renderView;
+
+/* ---------- queue view ---------- */
+let qv=store.get('gate.qv',{x:'',s:null});
+const sh=x=>/viva|oral/i.test(x)?'Viva':/written/i.test(x)?'Written':x;
+const slotVal=t=>{const m=/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i.exec(t||'');if(!m)return 1e6;let h=+m[1]%12;if(/pm/i.test(m[3]||''))h+=12;return h*60+(+m[2]||0)};
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const bs=()=>Math.max(1,parseInt($('qbs').value)||store.get('gate.bs',20));
+const waiting=a=>a.filter(q=>!q.d).length;
+function renderQ(keep){
+  const all=Object.values(queue),ex=[...new Set([...Object.values(db).flat().map(v=>v[0]),...all.map(q=>q.x)].filter(Boolean))];
+  if(!ex.includes(qv.x))qv.x=ex[0]||'';
+  const mine=all.filter(q=>q.x===qv.x),slots=[...new Set(mine.map(q=>q.s))].sort((a,b)=>slotVal(a)-slotVal(b));
+  if(!slots.includes(qv.s))qv.s=slots.find(s=>mine.some(q=>q.s===s&&!q.d));
+  if(!slots.includes(qv.s))qv.s=slots.length?slots[0]:null;
+  store.set('gate.qv',qv);
+  $('qt').innerHTML=ex.map(x=>'<button class="tb'+(x===qv.x?' on':'')+'" data-x="'+esc(x)+'">'+esc(sh(x))+' ('+waiting(all.filter(q=>q.x===x))+')</button>').join('');
+  $('qs').innerHTML=slots.map(s=>'<button class="tb'+(s===qv.s?' on':'')+'" data-s="'+esc(s)+'">'+esc(s||'No slot')+' ('+waiting(mine.filter(q=>q.s===s))+')</button>').join('');
+  const sq=$('qq').value.replace(/\D/g,''),isW=/written/i.test(qv.x),B=bs();
+  const inSlot=mine.filter(q=>q.s===qv.s),rows=(sq?mine.filter(q=>q.r.includes(sq)):inSlot).sort((a,b)=>slotVal(a.s)-slotVal(b.s)||a.n-b.n);
+  $('qcnt').textContent=sq?rows.length+' match(es) in '+sh(qv.x):'Waiting '+waiting(inSlot)+' \u00b7 Sent '+(inSlot.length-waiting(inSlot));
+  $('qb').hidden=!isW;$('qpdf').disabled=!mine.length;
+  $('ql').innerHTML=rows.map(q=>'<div class="qr'+(q.d?' sent':'')+'"><div class="qn">'+q.n+'</div><div class="qi"><div class="qname">'+esc(q.nm||'-')+'</div><div class="qroll">'+q.r.slice(0,5)+'<b>'+q.r.slice(5)+'</b>'+(sq?'  '+esc(q.s||'No slot'):'')+(isW?'  Batch '+Math.ceil(q.n/B):'')+'</div></div><button data-k="'+esc(q.r+'|'+q.x)+'">'+(q.d?'Undo':'Sent')+'</button></div>').join('')||'<p style="padding:10px">No students queued yet.</p>';
+  const l=$('ql');if(keep)l.scrollTop=keep.top;else{const f=l.querySelector('.qr:not(.sent)');l.scrollTop=f&&!sq?f.offsetTop:0}
+}
+$('btnQ').onclick=()=>{$('qq').value='';$('qbs').value=store.get('gate.bs',20);renderQ();$('queue').hidden=false};
+$('qx').onclick=()=>{$('queue').hidden=true;upd()};
+$('qq').oninput=()=>renderQ();
+$('qbs').onchange=()=>{store.set('gate.bs',bs());renderQ({top:$('ql').scrollTop})};
+$('qt').onclick=e=>{const b=e.target.closest('[data-x]');if(b){qv={x:b.dataset.x,s:null};renderQ()}};
+$('qs').onclick=e=>{const b=e.target.closest('[data-s]');if(b){qv.s=b.dataset.s;renderQ()}};
+$('ql').onclick=e=>{const b=e.target.closest('button[data-k]'),q=b&&queue[b.dataset.k];if(!q)return;
+  q.d=q.d?'':new Date().toISOString();store.set('gate.q',queue);renderQ({top:$('ql').scrollTop});upd()};
+$('qmb').onclick=()=>{const B=bs();store.set('gate.bs',B);const w=Object.values(queue).filter(q=>q.x===qv.x&&q.s===qv.s&&!q.d);
+  if(!w.length)return toast('Nothing waiting in this slot');
+  const mb=Math.min(...w.map(q=>Math.ceil(q.n/B))),hit=w.filter(q=>Math.ceil(q.n/B)===mb),t=new Date().toISOString();
+  hit.forEach(q=>q.d=t);store.set('gate.q',queue);renderQ({top:$('ql').scrollTop});upd();toast('Batch '+mb+' marked sent ('+hit.length+' students)')};
+$('qpdf').onclick=()=>exportPdf(qv.x);
+
+/* ---------- PDF export (plain text PDF, Courier, no library) ---------- */
+function buildPdf(pages){
+  const N=pages.length,o=[];
+  o[1]='<</Type/Catalog/Pages 2 0 R>>';
+  o[2]='<</Type/Pages/Kids['+pages.map((_,i)=>(5+2*i)+' 0 R').join(' ')+']/Count '+N+'>>';
+  o[3]='<</Type/Font/Subtype/Type1/BaseFont/Courier/Encoding/WinAnsiEncoding>>';
+  o[4]='<</Type/Font/Subtype/Type1/BaseFont/Courier-Bold/Encoding/WinAnsiEncoding>>';
+  pages.forEach((ops,i)=>{const c=ops.concat(['BT /F1 9 Tf 262 24 Td (Page '+(i+1)+' of '+N+') Tj ET']).join('\n');
+    o[5+2*i]='<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Resources<</Font<</F1 3 0 R/F2 4 0 R>>>>/Contents '+(6+2*i)+' 0 R>>';
+    o[6+2*i]='<</Length '+c.length+'>>\nstream\n'+c+'\nendstream'});
+  let out='%PDF-1.4\n';const off=[];
+  for(let i=1;i<o.length;i++){off[i]=out.length;out+=i+' 0 obj\n'+o[i]+'\nendobj\n'}
+  const x=out.length;
+  out+='xref\n0 '+o.length+'\n0000000000 65535 f \n'+off.slice(1).map(v=>String(v).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<</Size '+o.length+'/Root 1 0 R>>\nstartxref\n'+x+'\n%%EOF';
+  const b=new Uint8Array(out.length);for(let i=0;i<out.length;i++)b[i]=out.charCodeAt(i)&255;return b}
+function queuePdf(x){
+  const rows=Object.values(queue).filter(q=>q.x===x),isW=/written/i.test(x),B=bs(),pages=[],ttl=sh(x)+' student queue',mx=isW?50:61;let ops,y;
+  const T=(f,z,px,py,t)=>'BT /'+f+' '+z+' Tf '+px+' '+py+' Td ('+String(t).replace(/[^\x20-\x7e\xa0-\xff]/g,'?').replace(/([\\()])/g,'\\$1')+') Tj ET';
+  const np=()=>{ops=[];pages.push(ops);y=800;ops.push(T('F2',13,40,y,ttl));y-=28};
+  const head=(s,c)=>{ops.push(T('F2',11,40,y,'Slot: '+(s||'No slot')+(c?' (cont.)':'')));y-=18;
+    ops.push(T('F2',10,40,y,'Queue No.'),T('F2',10,115,y,'Roll No.'),T('F2',10,185,y,'Name'));if(isW)ops.push(T('F2',10,500,y,'Batch'));y-=16};
+  np();
+  [...new Set(rows.map(q=>q.s))].sort((a,b)=>slotVal(a)-slotVal(b)).forEach(s=>{
+    if(y<130)np();head(s,false);
+    rows.filter(q=>q.s===s).sort((a,b)=>a.n-b.n).forEach(q=>{if(y<50){np();head(s,true)}
+      const nm=q.nm||'-';ops.push(T('F1',10,40,y,q.n),T('F1',10,115,y,q.r),T('F1',10,185,y,nm.length>mx?nm.slice(0,mx-1)+'.':nm));
+      if(isW)ops.push(T('F1',10,500,y,Math.ceil(q.n/B)));y-=14});
+    y-=12});
+  return buildPdf(pages)}
+async function exportPdf(x){
+  if(!Object.values(queue).some(q=>q.x===x))return toast('Nothing queued for this exam');
+  const name=/viva|oral/i.test(x)?'viva_student_queue.pdf':/written/i.test(x)?'short_exam_queue.pdf':x.replace(/\W+/g,'_')+'_queue.pdf',
+    file=new File([queuePdf(x)],name,{type:'application/pdf'});
+  if(/iPhone|iPad|iPod/.test(navigator.userAgent)&&navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file]});return}catch(e){if(e&&e.name==='AbortError')return}}
+  const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),8000)}
 
 /* ---------- status bar ---------- */
 function upd(){
   $('loadInfo').textContent=nrolls()?nrolls()+' rolls loaded'+(srcs.length?'\n'+srcs.map(x=>x.name+(x.ex?' ('+x.ex+')':'')+': '+x.n+' eligible'+(x.x?', '+x.x+' not eligible':'')).join('\n'):'')+((skipped||dupes||conflicts)?'\n'+(skipped?skipped+' rows skipped. ':'')+(dupes?dupes+' repeats merged. ':'')+(conflicts?conflicts+' repeats with different time slots (first kept).':''):''):'No list loaded';$('btnView').hidden=!nrolls();
   $('sAdm').textContent=Object.keys(admitted).filter(k=>k.endsWith('|'+(cfg.exam||''))).length;$('sList').textContent=nrolls();$('gateTag').textContent=(cfg.gate?' \u00b7 '+cfg.gate:'')+(cfg.exam?' \u00b7 '+cfg.exam:'');
+  $('btnQ').textContent='Queue ('+Object.values(queue).filter(q=>!q.d).length+')';
   const b=$('banner');let m='';
   if(!nrolls())m='No roll list loaded. Open Settings and load the CSV.';
   b.textContent=m;b.hidden=!m;
