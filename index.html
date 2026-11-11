@@ -353,6 +353,7 @@ const sh=x=>/viva|oral/i.test(x)?'Viva':/written/i.test(x)?'Written':x;
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const bs=()=>Math.max(1,parseInt($('qbs').value)||store.get('gate.bs',20));
 const waiting=a=>a.filter(q=>!q.d).length;
+const qname=q=>q.nm||nameOf((db[q.r]||[]).filter(v=>v[0]===q.x))||nameOf(db[q.r]||[]);
 function renderQ(keep){
   const all=Object.values(queue),ex=qExams();
   if(!ex.includes(qv.x))qv.x=ex[0]||'';
@@ -362,7 +363,7 @@ function renderQ(keep){
   const sq=$('qq').value.replace(/\D/g,''),isW=/written/i.test(qv.x),B=bs(),rows=sq?mine.filter(q=>q.r.includes(sq)):mine;
   $('qcnt').textContent=sq?rows.length+' match(es) in '+sh(qv.x):'Waiting '+waiting(mine)+' \u00b7 Sent '+(mine.length-waiting(mine));
   $('qb').hidden=!isW;$('qpdf').disabled=!mine.length;
-  $('ql').innerHTML=rows.map(q=>'<div class="qr'+(q.d?' sent':'')+'"><div class="qn">'+q.n+'</div><div class="qi"><div class="qname">'+esc(q.nm||'-')+'</div><div class="qroll">'+q.r.slice(0,5)+'<b>'+q.r.slice(5)+'</b>'+(q.s?'  '+esc(q.s):'')+(isW?'  Batch '+Math.ceil(q.n/B):'')+'</div></div><button data-k="'+esc(q.r+'|'+q.x)+'">'+(q.d?'Undo':'Sent')+'</button></div>').join('')||'<p style="padding:10px">No students queued yet.</p>';
+  $('ql').innerHTML=rows.map(q=>'<div class="qr'+(q.d?' sent':'')+'"><div class="qn">'+q.n+'</div><div class="qi"><div class="qname">'+esc(qname(q)||'-')+'</div><div class="qroll">'+q.r.slice(0,5)+'<b>'+q.r.slice(5)+'</b>'+(q.s?'  '+esc(q.s):'')+(isW?'  Batch '+Math.ceil(q.n/B):'')+'</div></div><button data-k="'+esc(q.r+'|'+q.x)+'">'+(q.d?'Undo':'Sent')+'</button></div>').join('')||'<p style="padding:10px">No students queued yet.</p>';
   const l=$('ql');if(keep)l.scrollTop=keep.top;else{const f=l.querySelector('.qr:not(.sent)');l.scrollTop=f&&!sq?f.offsetTop:0}
 }
 $('btnQ').onclick=()=>{$('qq').value='';$('qbs').value=store.get('gate.bs',20);renderQ();$('queue').hidden=false};
@@ -380,13 +381,16 @@ $('qmb').onclick=()=>{const B=bs();store.set('gate.bs',B);const w=Object.values(
 $('qpdf').onclick=()=>exportPdf(qv.x);
 
 /* ---------- PDF export (plain text PDF, Courier, no library) ---------- */
+// Helvetica widths (1/1000 em) for characters 32..126, used to centre and trim text
+const HW=[278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584];
+const tw=(t,z)=>[...String(t)].reduce((a,ch)=>{const c=ch.charCodeAt(0);return a+(c>=32&&c<=126?HW[c-32]:556)},0)*z/1000;
 function buildPdf(pages){
   const N=pages.length,o=[];
   o[1]='<</Type/Catalog/Pages 2 0 R>>';
   o[2]='<</Type/Pages/Kids['+pages.map((_,i)=>(5+2*i)+' 0 R').join(' ')+']/Count '+N+'>>';
-  o[3]='<</Type/Font/Subtype/Type1/BaseFont/Courier/Encoding/WinAnsiEncoding>>';
-  o[4]='<</Type/Font/Subtype/Type1/BaseFont/Courier-Bold/Encoding/WinAnsiEncoding>>';
-  pages.forEach((ops,i)=>{const c=ops.concat(['BT /F1 9 Tf 262 24 Td (Page '+(i+1)+' of '+N+') Tj ET']).join('\n');
+  o[3]='<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>';
+  o[4]='<</Type/Font/Subtype/Type1/BaseFont/Helvetica-Bold/Encoding/WinAnsiEncoding>>';
+  pages.forEach((ops,i)=>{const ft='Page '+(i+1)+' of '+N,c=ops.concat(['0.45 g BT /F1 9 Tf '+((595-tw(ft,9))/2).toFixed(1)+' 24 Td ('+ft+') Tj ET']).join('\n');
     o[5+2*i]='<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Resources<</Font<</F1 3 0 R/F2 4 0 R>>>>/Contents '+(6+2*i)+' 0 R>>';
     o[6+2*i]='<</Length '+c.length+'>>\nstream\n'+c+'\nendstream'});
   let out='%PDF-1.4\n';const off=[];
@@ -395,14 +399,27 @@ function buildPdf(pages){
   out+='xref\n0 '+o.length+'\n0000000000 65535 f \n'+off.slice(1).map(v=>String(v).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<</Size '+o.length+'/Root 1 0 R>>\nstartxref\n'+x+'\n%%EOF';
   const b=new Uint8Array(out.length);for(let i=0;i<out.length;i++)b[i]=out.charCodeAt(i)&255;return b}
 function queuePdf(x){
-  const rows=Object.values(queue).filter(q=>q.x===x).sort((a,b)=>a.n-b.n),isW=/written/i.test(x),B=bs(),pages=[],ttl=sh(x)+' student queue',mx=isW?50:61;let ops,y;
-  const T=(f,z,px,py,t)=>'BT /'+f+' '+z+' Tf '+px+' '+py+' Td ('+String(t).replace(/[^\x20-\x7e\xa0-\xff]/g,'?').replace(/([\\()])/g,'\\$1')+') Tj ET';
-  const np=()=>{ops=[];pages.push(ops);y=800;ops.push(T('F2',13,40,y,ttl));y-=28;
-    ops.push(T('F2',10,40,y,'Queue No.'),T('F2',10,115,y,'Roll No.'),T('F2',10,185,y,'Name'));if(isW)ops.push(T('F2',10,500,y,'Batch'));y-=16};
-  np();
-  rows.forEach(q=>{if(y<50)np();const nm=q.nm||'-';
-    ops.push(T('F1',10,40,y,q.n),T('F1',10,115,y,q.r),T('F1',10,185,y,nm.length>mx?nm.slice(0,mx-1)+'.':nm));
-    if(isW)ops.push(T('F1',10,500,y,Math.ceil(q.n/B)));y-=14});
+  const rows=Object.values(queue).filter(q=>q.x===x).sort((a,b)=>a.n-b.n),isW=/written/i.test(x),B=bs(),pages=[],
+    ttl=sh(x)+' Student Queue',RH=22,HH=26,L=40,
+    cols=isW?[{w:70,h:'Queue No.',c:1},{w:95,h:'Roll No.',c:1},{w:290,h:'Name'},{w:60,h:'Batch',c:1}]:[{w:70,h:'Queue No.',c:1},{w:95,h:'Roll No.',c:1},{w:350,h:'Name'}];
+  const esc=t=>String(t).replace(/[^\x20-\x7e\xa0-\xff]/g,'?').replace(/([\\()])/g,'\\$1');
+  const T=(f,z,px,py,t,col)=>(col||'0 g')+' BT /'+f+' '+z+' Tf '+px.toFixed(1)+' '+py.toFixed(1)+' Td ('+esc(t)+') Tj ET';
+  const fit=(t,z,m)=>{t=esc(t);if(tw(t,z)<=m)return t;while(t.length>1&&tw(t+'...',z)>m)t=t.slice(0,-1);return t.trim()+'...'};
+  let ops,y;
+  const cell=(i,t,y0,h,f,z,col)=>{const px=L+cols.slice(0,i).reduce((a,c)=>a+c.w,0),w=cols[i].w,s=fit(t,z,w-16),k=f==='F2'?1.08:1;
+    ops.push(T(f,z,cols[i].c?px+(w-tw(s,z)*k)/2:px+8,y0+(h-z*.72)/2,s,col))};
+  const np=first=>{ops=[];pages.push(ops);
+    if(first){ops.push(T('F2',20,L,790,ttl,'0.09 0.40 0.20 rg'));
+      ops.push(T('F1',10,L,770,'Generated '+new Date().toLocaleString([],{dateStyle:'medium',timeStyle:'short'})+'  \xb7  '+rows.length+' students','0.4 g'));y=750}
+    else{ops.push(T('F2',12,L,806,ttl+' (continued)','0.09 0.40 0.20 rg'));y=786}
+    const y0=y-HH,W=cols.reduce((a,c)=>a+c.w,0);
+    ops.push('0.09 0.40 0.20 rg '+L+' '+y0+' '+W+' '+HH+' re f');
+    cols.forEach((c,i)=>cell(i,c.h,y0,HH,'F2',11,'1 g'));y=y0};
+  np(true);
+  rows.forEach((q,r)=>{if(y-RH<50)np(false);const y0=y-RH,W=cols.reduce((a,c)=>a+c.w,0),v=[q.n,q.r,qname(q)||'-',Math.ceil(q.n/B)];
+    if(r%2===0)ops.push('0.95 0.96 0.97 rg '+L+' '+y0+' '+W+' '+RH+' re f');
+    ops.push('0.80 0.83 0.86 RG 0.5 w');let px=L;cols.forEach(c=>{ops.push(px+' '+y0+' '+c.w+' '+RH+' re S');px+=c.w});
+    cols.forEach((c,i)=>cell(i,v[i],y0,RH,i===0?'F2':'F1',11));y=y0});
   return buildPdf(pages)}
 async function exportPdf(x){
   if(!Object.values(queue).some(q=>q.x===x))return toast('Nothing queued for this exam');

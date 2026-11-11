@@ -126,7 +126,7 @@ The queue numbers students as they arrive in the waiting area, lists who is wait
 3. Call students by number and name, check the roll on the card, and tap **Sent**. The row dims and the button becomes **Undo**. Rows never move or change number. Marking Sent is also how you clear a student who was scanned by mistake.
 4. Search by roll number to find a student's place.
 5. **Written tab:** each row shows its Batch (queue number divided by the batch size, rounded up). The batch size defaults to 20 and can be changed. **Mark batch sent** marks every waiting student in the lowest batch that still has anyone waiting.
-6. **Export PDF** (on each tab) saves `viva_student_queue.pdf` or `short_exam_queue.pdf`: Queue No., Roll No. and Name for every queued student of that exam, in queue order, as one list (the Written file also has a Batch column). On an iPhone the share sheet opens so you can save it to Files. Names are plain Latin text in the PDF.
+6. **Export PDF** (on each tab) saves `viva_student_queue.pdf` or `short_exam_queue.pdf`: a formatted A4 table with a title and the time it was made, then Queue No., Roll No. and Name for every queued student of that exam, in queue order (the Written file also has a Batch column). The header row repeats on every page, rows are striped, long names are trimmed with "...", and pages are numbered. On an iPhone the share sheet opens so you can save it to Files. Names are plain Latin text in the PDF. If a queued student has no name, the app takes it from the loaded list when the PDF is made.
 7. Scanning is paused while the Queue, Settings or the list viewer is open.
 
 **Admit anyway on a red screen:** the student is admitted and added to the queue of their exam, with the next number. If the roll is not in any list, a prompt asks which queue to use (Viva or Written), with a "Don't queue" button.
@@ -190,7 +190,7 @@ The one way data leaves the phone is **Export PDF**, which you start yourself. T
 ## Updating the app
 
 1. Edit the file and upload it to GitHub. Netlify redeploys automatically.
-2. In `sw.js`, raise the version number (for example `gate-v11` to `gate-v12`).
+2. In `sw.js`, raise the version number (for example `gate-v12` to `gate-v13`).
 3. Open the app on each phone with internet, twice. The first open downloads the update, the second runs it.
 4. If you changed the logo or icons, remove the app from the home screen and add it again.
 
@@ -202,7 +202,7 @@ The one way data leaves the phone is **Export PDF**, which you start yourself. T
 | Camera stopped | Tap "Tap to restart". This happens after a call, an app switch or locking the phone. |
 | Everyone shows INVALID CODE | The QR is not exactly 8 digits. Check what the card contains. Type the roll manually meanwhile. |
 | Hard-to-scan cards (scratched, blurry, laminated) | Tilt the card slightly to avoid glare, hold it 15 to 25 cm away, try the Zoom button, avoid direct light on the card, wipe the card clean, and use manual entry as the last resort. |
-| Names show as a dash | The CSV has no `Name` column, or its header does not contain "name". Fix the sheet and reload the CSV files. |
+| Names show as a dash (screen, queue or PDF) | The CSV has no `Name` column, its header does not contain "name", or the list was loaded before names were supported. Fix the sheet if needed and reload the CSV files. Queued students then show their names. |
 | Everyone shows NOT REGISTERED | The list is missing or wrong. Reload the CSV files and use View list to check. |
 | WRONG EXAM for many students | "Exam checked at this phone" is set to the wrong exam. |
 | Netlify badge covers the Check button | Turn it off in Netlify: Project configuration > General > Powered by Netlify badge. |
