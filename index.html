@@ -171,7 +171,7 @@ function show(kind,title,sub,roll,act,x){x=x||{};
   busy=true;clearTimeout(hideT);
   const o=$('ov');o.className=kind;o.hidden=false;
   $('oT').textContent=title;$('oR').textContent=roll||'';$('oS').textContent=sub||'';$('oA').hidden=!act;$('oN').textContent=x.nm||'';$('oNo').textContent=x.no?'No. '+x.no:'';
-  if(!act)hideT=setTimeout(hide,2200);
+  if(!act)hideT=setTimeout(hide,kind==='green'||kind==='orange'?5200:2200);
   beep(kind);upd();
 }
 function hide(){clearTimeout(hideT);$('ov').hidden=true;busy=false}
