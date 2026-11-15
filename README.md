@@ -4,9 +4,9 @@ An offline web app that checks student ID cards at the exam gate. It scans the Q
 
 | Screen | Meaning |
 |---|---|
-| Green: REGISTERED | Student is eligible. Shows `time:` and `exam:` (one block per exam). |
+| Green: REGISTERED | Student is eligible. Shows `time:`, `exam:` and, if the sheet has a Score column, `score:` (one block per exam). |
 | Orange: DUPLICATE | This roll already entered on this phone. Shows the time of the first entry. |
-| Red: NOT ELIGIBLE | Roll is in a list but marked as not eligible (for example Fail or Rejected). |
+| Red: NOT ELIGIBLE | Roll is in a list but marked as not eligible (for example Fail or Rejected). Shows the student's score if the sheet has one, including `N/A`. |
 | Red: WRONG EXAM | Phone is set to one exam, but the student is eligible only for another. Shows that exam and time. |
 | Red: NOT REGISTERED | Roll is not in any loaded list. Send to the help desk. |
 | Blue: WRONG GATE | Roll is outside this phone's roll range (only if a range is set). |
@@ -27,7 +27,7 @@ The app reads your eligibility sheets directly, so you can use the Google Sheets
 
 **How a file is read**
 - The header row is the first row with a cell starting with `roll` (any capitals), for example `Roll No`. Title rows above it are fine.
-- Next to each roll column, the app looks for a `Time Slots` column (header contains "time") and an `Eligibility` column (header contains "eligib"). The student name comes from a `Name` column (header contains "name"): the nearest one to the **left** of each Roll column, never past the previous Roll column. This matches sheets laid out as `S No | Students Name | Roll No | Time Slots | ...`.
+- Next to each roll column, the app looks for a `Time Slots` column (header contains "time") and an `Eligibility` column (header contains "eligib"). The student name comes from a `Name` column (header contains "name"): the nearest one to the **left** of each Roll column, never past the previous Roll column. This matches sheets laid out as `S No | Students Name | Roll No | Time Slots | ...`. A `Score` column (header starting with "score") is read from each block too, and shown at the end of the result screen exactly as written, including `N/A`. An empty score cell shows `-`. Sheets without a Score column, such as the written list, show no score line.
 - Several roll blocks side by side are all read. For example, an eligible table on the left and a Fail or Rejected table on the right.
 - A row is eligible if its Eligibility text is `Eligible`, `Pass`, `Passed`, `Yes`, `OK`, `Registered` or `Selected`. Any other text, or an empty cell, counts as not eligible. If a block has no Eligibility column, every row in it is eligible.
 - Roll numbers longer than 8 digits have their leading zeros stripped. Shorter ones are padded to 8 digits (`36857` becomes `00036857`).
@@ -79,7 +79,10 @@ Make a small test CSV with about 16 rolls, including `00302025`, for the first r
 
 | Test | Expected result |
 |---|---|
-| Scan a registered card | Green, with the right time and exam |
+| Scan a registered card | Green, with the right time and exam, and the score for a sheet that has a Score column |
+| Scan a student marked Rejected, with a number score | Red NOT ELIGIBLE with `score: 9` (for example) |
+| Scan a student marked Rejected, with `N/A` as the score | Red NOT ELIGIBLE with `score: N/A` |
+| Scan a student from a sheet with no Score column (written list) | No score line |
 | Scan the same card again after moving it out of view for 2 seconds | Orange DUPLICATE with the first entry time |
 | Reload the page, then scan the same card | Still orange |
 | Settings > **Reset entries**, then scan it | Green again |
@@ -190,7 +193,7 @@ The one way data leaves the phone is **Export PDF**, which you start yourself. T
 ## Updating the app
 
 1. Edit the file and upload it to GitHub. Netlify redeploys automatically.
-2. In `sw.js`, raise the version number (for example `gate-v12` to `gate-v13`).
+2. In `sw.js`, raise the version number (for example `gate-v13` to `gate-v14`).
 3. Open the app on each phone with internet, twice. The first open downloads the update, the second runs it.
 4. If you changed the logo or icons, remove the app from the home screen and add it again.
 

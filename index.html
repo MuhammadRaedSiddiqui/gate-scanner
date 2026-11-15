@@ -135,8 +135,9 @@ function toast(m,ms){const t=$('toast');t.textContent=m;t.hidden=false;clearTime
 /* ---------- decision logic ---------- */
 function inRange(r){const f=norm(cfg.from),t=norm(cfg.to);return !((f&&r<f)||(t&&r>t))}
 function admit(r){const k=key(r);if(!admitted[k]){admitted[k]=new Date().toISOString();store.set('gate.adm',admitted)}} // first entry time only
-const fmt=v=>v.map(x=>'time: '+(x[1]||'-')+'\nexam: '+(x[0]||'-')).join('\n\n');
-const fmtQ=(ok,q)=>ok.map((v,i)=>(q.length>1&&q[i]?'No. '+q[i].n+'\n':'')+'time: '+(v[1]||'-')+'\nexam: '+(v[0]||'-')).join('\n\n');
+const sc=x=>x[4]?'\nscore: '+x[4]:'';
+const fmt=v=>v.map(x=>'time: '+(x[1]||'-')+'\nexam: '+(x[0]||'-')+sc(x)).join('\n\n');
+const fmtQ=(ok,q)=>ok.map((v,i)=>(q.length>1&&q[i]?'No. '+q[i].n+'\n':'')+'time: '+(v[1]||'-')+'\nexam: '+(v[0]||'-')+sc(v)).join('\n\n');
 const nameOf=e=>(e.find(v=>v[3])||[])[3]||'';
 function enqueue(r,ents){const out=[];let ch=false;
   ents.forEach(v=>{const k=r+'|'+v[0],s=v[1]||'';
@@ -150,7 +151,7 @@ function decide(r){
   if(!inRange(r))return show('blue','WRONG GATE','This roll belongs to another gate',r,true,{nm});
   if(admitted[key(r)]){const q=enqueue(r,ok);return show('orange','DUPLICATE','Already entered at '+tm(admitted[key(r)])+(q.some(z=>z.d)?'\nAlready sent in.':'')+(ok.length?'\n\n'+fmtQ(ok,q):''),r,false,{nm,no:q.length===1?q[0].n:''})}
   if(ok.length){admit(r);const q=enqueue(r,ok);return show('green','REGISTERED',fmtQ(ok,q),r,false,{nm,no:q.length===1?q[0].n:''})}
-  if(f.length)return show('red','NOT ELIGIBLE','Listed as not eligible: '+f.map(v=>v[0]||'this exam').join(', '),r,true,{nm});
+  if(f.length)return show('red','NOT ELIGIBLE','Listed as not eligible: '+f.map(v=>(v[0]||'this exam')+sc(v)).join('\n'),r,true,{nm});
   if(o.length)return show('red','WRONG EXAM','Registered for:\n'+fmt(o),r,true,{nm});
   show('red','NOT REGISTERED','Send to help desk',r,true)
 }
@@ -304,13 +305,13 @@ function parseSheet(text,fname){
     rc.forEach((j,k)=>{const end=k+1<rc.length?rc[k+1]:h.length,lo=k>0?rc[k-1]:-1,find=re=>{for(let i=j;i<end;i++)if(re.test(h[i]||''))return i;return -1},
       left=()=>{for(let i=j-1;i>lo;i--)if(/name/i.test(h[i]||''))return i;return -1}; // Name column sits LEFT of Roll: nearest one, never past the previous roll column
       let n=left();if(n<0&&k===rc.length-1)n=find(/name/i);
-      tabs.push({r:j,t:find(/time/i),e:find(/eligib/i),n})})}
-  else tabs=[{r:0,t:-1,e:-1,n:-1}];
+      tabs.push({r:j,t:find(/time/i),e:find(/eligib/i),n,s:find(/^\s*score/i)})})}
+  else tabs=[{r:0,t:-1,e:-1,n:-1,s:-1}];
   rows.slice(hi+1).forEach(row=>tabs.forEach(tb=>{
     let c=(row[tb.r]||'').replace(/\s/g,'');if(!c)return;if(c.length>8)c=c.replace(/^0+/,'');
     if(!/^\d{1,8}$/.test(c)){if(hi>=0||/\d/.test(c))bad++;return}
     const ok=tb.e<0||/^(eligible|pass|passed|yes|ok|registered|selected)$/i.test((row[tb.e]||'').trim());
-    out.push([c.padStart(8,'0'),exam,tb.t>=0?(row[tb.t]||'').trim():'',ok,tb.n>=0?(row[tb.n]||'').trim():''])}));
+    out.push([c.padStart(8,'0'),exam,tb.t>=0?(row[tb.t]||'').trim():'',ok,tb.n>=0?(row[tb.n]||'').trim():'',tb.s>=0?((row[tb.s]||'').trim()||'-'):''])}));
   return{rows:out,bad,exam}}
 let loadMode='replace';
 $('btnLoad').onclick=()=>{loadMode='replace';$('file').click()};
@@ -320,8 +321,8 @@ $('file').onchange=async ev=>{
   const add=loadMode==='add',nd=add?JSON.parse(JSON.stringify(db)):{},src=add?srcs.slice():[];let bad=0,dup=0,conf=0,tot=0;
   for(const f of files){
     const p=parseSheet(await f.text(),f.name);let n=0,x=0;
-    p.rows.forEach(([r,ex,t,ok,nm])=>{const a=nd[r]||(nd[r]=[]),m=a.find(v=>v[0]===ex);
-      if(!m)a.push([ex,t,ok?1:0,nm||'']);else{dup++;if(ok&&!m[2]){m[1]=t;m[2]=1;if(nm)m[3]=nm}else if(ok&&m[2]&&t&&m[1]!==t)conf++;if(nm&&!m[3])m[3]=nm}
+    p.rows.forEach(([r,ex,t,ok,nm,sc])=>{const a=nd[r]||(nd[r]=[]),m=a.find(v=>v[0]===ex);
+      if(!m)a.push([ex,t,ok?1:0,nm||'',sc||'']);else{dup++;if(ok&&!m[2]){m[1]=t;m[2]=1;if(nm)m[3]=nm;if(sc)m[4]=sc}else if(ok&&m[2]&&t&&m[1]!==t)conf++;if(nm&&!m[3])m[3]=nm;if(sc&&!m[4])m[4]=sc}
       ok?n++:x++});
     bad+=p.bad;tot+=n+x;src.push({name:f.name,n,x,ex:p.exam})}
   ev.target.value='';
@@ -343,7 +344,7 @@ $('btnWipe').onclick=()=>{if(confirm('Wipe roll list and entries from this phone
 /* ---------- list viewer ---------- */
 function renderView(){const q=$('vq').value.replace(/\D/g,''),a=Object.keys(db).sort(),r=q?a.filter(x=>x.includes(q)):a;
   $('vc').textContent=q?r.length+' of '+a.length+' shown':a.length+' rolls';
-  $('vl').textContent=r.map(k=>db[k].map(v=>k+'  '+(v[3]||'')+'\n      '+(v[1]||'-')+'  '+(v[0]||'')+(v[2]?'':'  NOT ELIGIBLE')).join('\n')).join('\n')||'No match'}
+  $('vl').textContent=r.map(k=>db[k].map(v=>k+'  '+(v[3]||'')+'\n      '+(v[1]||'-')+'  '+(v[0]||'')+(v[4]?'  score '+v[4]:'')+(v[2]?'':'  NOT ELIGIBLE')).join('\n')).join('\n')||'No match'}
 $('btnView').onclick=()=>{$('vq').value='';renderView();$('viewer').hidden=false};
 $('vx').onclick=()=>$('viewer').hidden=true;$('vq').oninput=renderView;
 
